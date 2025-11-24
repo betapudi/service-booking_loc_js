@@ -1,8 +1,11 @@
 // provider/provider.js
 import { initProviderDashboard } from "./dashboard.js";
 import { setupLogoutButton } from "../shared/logout.js";
+import { setupSocket, getSocket } from "../shared/socket.js";
 import { tryGeolocationFallback } from "../shared/geolocation.js";
 import { initializeProfileManager } from "../shared/profile-completion.js";
+import { showToast, switchTab } from "../shared/ui.js";
+import { loadProviderBookings, loadProviderHistory} from "./booking.js";
 
 // Initialize everything once DOM is ready
 document.addEventListener("DOMContentLoaded", async () => {

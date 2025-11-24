@@ -218,60 +218,102 @@ router.get('/search', authMiddleware, permit('customer'), async (req, res) => {
 // });
 
 // Get nearby providers - EXCLUDES BROKER-MANAGED PROVIDERS
+// router.get('/nearby', authMiddleware, permit('customer'), async (req, res) => {
+//   try {
+//     const { lat, lon, radius = 15 } = req.query;
+    
+//     if (!lat || !lon) {
+//       return res.status(400).json({ error: 'Latitude and longitude are required' });
+//     }
+
+//     const providers = await db.query(`
+//       SELECT 
+//         u.id,
+//         u.name,
+//         u.mobile_number,
+//         u.latitude,
+//         u.longitude,
+//         u.is_verified,
+//         u.registered_by_broker,
+//         COALESCE(
+//           ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL),
+//           ARRAY[]::varchar[]
+//         ) as skills,
+//         COUNT(b.id) as total_bookings,
+//         AVG(br.rating) as rating,
+//         ST_Distance(
+//           u.geom,
+//           ST_SetSRID(ST_MakePoint($1, $2), 4326)
+//         ) / 1000 as distance_km
+//       FROM users u
+//       LEFT JOIN provider_skills ps ON u.id = ps.user_id
+//       LEFT JOIN skills s ON ps.skill_id = s.id
+//       LEFT JOIN bookings b ON u.id = b.provider_id
+//       LEFT JOIN booking_ratings br ON b.id = br.booking_id
+//       WHERE u.role = 'provider'
+//         AND u.is_verified = true
+//         AND u.registered_by_broker IS NULL  -- EXCLUDE BROKER-MANAGED PROVIDERS
+//         AND u.latitude IS NOT NULL
+//         AND u.longitude IS NOT NULL
+//         AND ST_DWithin(
+//           u.geom,
+//           ST_SetSRID(ST_MakePoint($1, $2), 4326),
+//           $3 * 1000
+//         )
+//       GROUP BY u.id
+//       HAVING COUNT(b.id) >= 0
+//       ORDER BY distance_km
+//       LIMIT 50
+//     `, [lon, lat, radius]);
+
+//     console.log(`Found ${providers.rows.length} nearby providers`);
+
+//     res.json({
+//       success: true,
+//       providers: providers.rows
+//     });
+//   } catch (error) {
+//     console.error('Error fetching nearby providers:', error);
+//     res.status(500).json({ error: 'Failed to fetch providers: ' + error.message });
+//   }
+// });
+// backend/routes/providers.js
 router.get('/nearby', authMiddleware, permit('customer'), async (req, res) => {
   try {
     const { lat, lon, radius = 15 } = req.query;
-    
-    if (!lat || !lon) {
-      return res.status(400).json({ error: 'Latitude and longitude are required' });
-    }
+    if (!lat || !lon) return res.status(400).json({ error: 'Latitude and longitude are required' });
 
-    const providers = await db.query(`
-      SELECT 
-        u.id,
-        u.name,
-        u.mobile_number,
-        u.latitude,
-        u.longitude,
-        u.is_verified,
-        u.registered_by_broker,
-        COALESCE(
-          ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL),
-          ARRAY[]::varchar[]
-        ) as skills,
-        COUNT(b.id) as total_bookings,
-        AVG(br.rating) as rating,
-        ST_Distance(
-          u.geom,
-          ST_SetSRID(ST_MakePoint($1, $2), 4326)
-        ) / 1000 as distance_km
-      FROM users u
-      LEFT JOIN provider_skills ps ON u.id = ps.user_id
-      LEFT JOIN skills s ON ps.skill_id = s.id
-      LEFT JOIN bookings b ON u.id = b.provider_id
-      LEFT JOIN booking_ratings br ON b.id = br.booking_id
-      WHERE u.role = 'provider'
-        AND u.is_verified = true
-        AND u.registered_by_broker IS NULL  -- EXCLUDE BROKER-MANAGED PROVIDERS
-        AND u.latitude IS NOT NULL
-        AND u.longitude IS NOT NULL
-        AND ST_DWithin(
-          u.geom,
-          ST_SetSRID(ST_MakePoint($1, $2), 4326),
-          $3 * 1000
-        )
-      GROUP BY u.id
-      HAVING COUNT(b.id) >= 0
-      ORDER BY distance_km
-      LIMIT 50
-    `, [lon, lat, radius]);
+    const providers = await db.query(
+      `SELECT
+         u.id, u.name, u.mobile_number, u.latitude, u.longitude, u.is_verified, u.registered_by_broker,
+         COALESCE(ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL), ARRAY[]::varchar[]) AS skills,
+         COUNT(b.id) AS total_bookings,
+         AVG(br.rating) AS rating,
+         ST_Distance(
+           u.geom::geography,
+           ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+         ) / 1000 AS distance_km
+       FROM users u
+       LEFT JOIN provider_skills ps ON u.id = ps.user_id
+       LEFT JOIN skills s ON ps.skill_id = s.id
+       LEFT JOIN bookings b ON u.id = b.provider_id
+       LEFT JOIN booking_ratings br ON b.id = br.booking_id
+       WHERE u.role = 'provider'
+         AND u.is_verified = true
+         AND u.registered_by_broker IS NULL
+         AND u.geom IS NOT NULL
+         AND ST_DWithin(
+           u.geom::geography,
+           ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+           $3 * 1000
+         )
+       GROUP BY u.id
+       ORDER BY distance_km
+       LIMIT 50`,
+      [parseFloat(lon), parseFloat(lat), parseFloat(radius)]
+    );
 
-    console.log(`Found ${providers.rows.length} nearby providers`);
-
-    res.json({
-      success: true,
-      providers: providers.rows
-    });
+    res.json({ success: true, providers: providers.rows });
   } catch (error) {
     console.error('Error fetching nearby providers:', error);
     res.status(500).json({ error: 'Failed to fetch providers: ' + error.message });
@@ -279,51 +321,81 @@ router.get('/nearby', authMiddleware, permit('customer'), async (req, res) => {
 });
 
 // ✅ Update provider location (FIXED - without updated_at column)
+// router.put("/:id/location", async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { latitude, longitude, accuracy } = req.body;
+
+//     console.log(`Updating location for provider ${id}:`, { latitude, longitude, accuracy });
+
+//     if (!latitude || !longitude) {
+//       return res.status(400).json({ error: "Latitude and longitude required" });
+//     }
+
+//     // Update provider's location in users table
+//     const result = await db.query(
+//       `UPDATE users 
+//        SET latitude = $1, longitude = $2, 
+//            meta = jsonb_set(
+//              COALESCE(meta, '{}'::jsonb), 
+//              '{location}', 
+//              $3::jsonb
+//            )
+//        WHERE id = $4 AND role = 'provider'
+//        RETURNING id, name, latitude, longitude, meta`,
+//       [
+//         parseFloat(latitude), 
+//         parseFloat(longitude), 
+//         JSON.stringify({ 
+//           lat: parseFloat(latitude), 
+//           lng: parseFloat(longitude),
+//           accuracy: accuracy || null
+//         }), 
+//         parseInt(id)
+//       ]
+//     );
+
+//     if (result.rowCount === 0) {
+//       return res.status(404).json({ error: "Provider not found" });
+//     }
+    
+//     console.log(`✅ Location updated for provider ${id}`);
+//     res.json({ 
+//       success: true, 
+//       message: "Location updated successfully",
+//       provider: result.rows[0]
+//     });
+
+//   } catch (err) {
+//     console.error("Error updating provider location:", err);
+//     res.status(500).json({ error: "Internal server error", details: err.message });
+//   }
+// });
+// backend/routes/providers.js
 router.put("/:id/location", async (req, res) => {
   try {
     const { id } = req.params;
     const { latitude, longitude, accuracy } = req.body;
 
-    console.log(`Updating location for provider ${id}:`, { latitude, longitude, accuracy });
+    if (!latitude || !longitude) return res.status(400).json({ error: "Latitude and longitude required" });
 
-    if (!latitude || !longitude) {
-      return res.status(400).json({ error: "Latitude and longitude required" });
-    }
+    const lat = parseFloat(latitude);
+    const lon = parseFloat(longitude);
 
-    // Update provider's location in users table
     const result = await db.query(
-      `UPDATE users 
-       SET latitude = $1, longitude = $2, 
-           meta = jsonb_set(
-             COALESCE(meta, '{}'::jsonb), 
-             '{location}', 
-             $3::jsonb
-           )
+      `UPDATE users
+       SET latitude = $1,
+           longitude = $2,
+           geom = ST_SetSRID(ST_MakePoint($2, $1), 4326),
+           meta = jsonb_set(COALESCE(meta, '{}'::jsonb), '{location}', $3::jsonb)
        WHERE id = $4 AND role = 'provider'
        RETURNING id, name, latitude, longitude, meta`,
-      [
-        parseFloat(latitude), 
-        parseFloat(longitude), 
-        JSON.stringify({ 
-          lat: parseFloat(latitude), 
-          lng: parseFloat(longitude),
-          accuracy: accuracy || null
-        }), 
-        parseInt(id)
-      ]
+      [lat, lon, JSON.stringify({ lat, lng: lon, accuracy: accuracy || null, updated_at: new Date().toISOString() }), parseInt(id)]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Provider not found" });
-    }
-    
-    console.log(`✅ Location updated for provider ${id}`);
-    res.json({ 
-      success: true, 
-      message: "Location updated successfully",
-      provider: result.rows[0]
-    });
+    if (result.rowCount === 0) return res.status(404).json({ error: "Provider not found" });
 
+    res.json({ success: true, message: "Location updated successfully", provider: result.rows[0] });
   } catch (err) {
     console.error("Error updating provider location:", err);
     res.status(500).json({ error: "Internal server error", details: err.message });

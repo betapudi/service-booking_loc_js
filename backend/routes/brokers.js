@@ -57,6 +57,18 @@ router.post('/register-provider', authMiddleware, permit('broker'), async (req, 
       [mobile_number, name || null, location_id || null, brokerId]
     );
     const provider = providerResult.rows[0];
+    
+    const io = req.app.locals.io;
+
+    // ✅ Emit standardized event
+    io.emit("user_registered", {
+      id: provider.id,
+      name: provider.name,
+      role: "provider",
+      mobile_number: provider.mobile_number,
+      is_verified: provider.is_verified,
+      registered_by_broker: brokerId
+    });
 
     if (Array.isArray(skills) && skills.length > 0) {
       for (const skillId of skills) {
@@ -118,14 +130,25 @@ router.post('/verify-provider-otp', authMiddleware, permit('broker'), async (req
     const otpRow = r.rows[0];
     await db.query('UPDATE otps SET used=true WHERE id=$1', [otpRow.id]);
     await db.query('UPDATE users SET is_verified=true WHERE mobile_number=$1', [mobile]);
+    const provider = updated.rows[0];
 
+    // ✅ Emit socket events
+    const io = req.app.locals.io;
+    // ✅ Emit standardized event
+    io.emit("user_registered", {
+      id: provider.id,
+      name: provider.name,
+      role: "provider",
+      mobile_number: provider.mobile_number,
+      is_verified: provider.is_verified,
+      verified_by_broker: req.user.id
+    });
     res.json({ success: true, message: 'Provider verified successfully' });
   } catch (err) {
     console.error('OTP verification failed:', err);
     res.status(500).json({ error: 'Server error: ' + err.message });
   }
 });
-
 
 router.get('/providers', authMiddleware, permit('broker'), async (req, res) => {
   try {
@@ -349,10 +372,10 @@ router.post('/customer-requests/:id/accept', authMiddleware, permit('broker'), a
 
       const booking = await db.query(`
         INSERT INTO bookings (
-          customer_id, provider_id, broker_id, total_amount, status, metadata, created_at
-        ) VALUES ($1,$2,$3,$4,'ACCEPTED',$5,NOW())
+          customer_id, provider_id, broker_id, total_amount, status, metadata, created_at,group_request_id
+        ) VALUES ($1,$2,$3,$4,'ACCEPTED',$5,NOW(),$6)
         RETURNING *
-      `, [request.customer_id, providerId, brokerId, amountPerProvider, JSON.stringify(metadata)]);
+      `, [request.customer_id, providerId, brokerId, amountPerProvider, JSON.stringify(metadata), request.id]);
 
       createdBookings.push(booking.rows[0]);
     }
@@ -422,15 +445,16 @@ router.post('/group-requests/:id/create-booking', authMiddleware, permit('broker
 
       const r = await db.query(`
         INSERT INTO bookings (
-          customer_id, provider_id, broker_id, total_amount, status, metadata, created_at
-        ) VALUES ($1,$2,$3,$4,'ACCEPTED',$5,NOW())
+          customer_id, provider_id, broker_id, total_amount, status, metadata, created_at, group_request_id
+        ) VALUES ($1,$2,$3,$4,'ACCEPTED',$5,NOW(),$6)
         RETURNING *
       `, [
         request.customer_id,
         providerId,
         brokerId,
         total_amount / provider_ids.length,
-        JSON.stringify(meta)
+        JSON.stringify(meta),
+        request.id || null
       ]);
 
       createdBookings.push(r.rows[0]);
@@ -486,9 +510,7 @@ router.post('/group-bookings/:id/cancel', authMiddleware, permit('broker', 'cust
     const bookingsUpdate = await db.query(`
       UPDATE bookings 
       SET status = 'CANCELLED', updated_at = NOW()
-      WHERE metadata->>'original_request_id' = $1 
-         OR metadata->>'customer_request_id' = $1
-         OR (broker_id = $2 AND customer_id = $3)
+      WHERE group_request_id = $1
       RETURNING *
     `, [id, customerRequest.broker_id, customerRequest.customer_id]);
 
@@ -531,34 +553,95 @@ router.post('/group-bookings/:id/cancel', authMiddleware, permit('broker', 'cust
 });
 
 // Broker: list all group bookings created by this broker
+// router.get('/group-bookings', authMiddleware, permit('broker'), async (req, res) => {
+//   try {
+//     const brokerId = req.user.id;
+
+//     const bookings = await db.query(`
+//       SELECT 
+//         b.*,
+//         c.name AS customer_name,
+//         c.mobile_number AS customer_mobile,
+//         p.name AS provider_name,
+//         p.mobile_number AS provider_mobile,
+//         b.metadata->>'group_booking' AS is_group_booking,
+//         b.metadata->>'original_request_id' AS original_request_id,
+//         b.metadata->>'provider_count' AS provider_count,
+//         b.metadata->>'skill_required' AS skill_required,
+//         b.metadata->>'description' AS job_description,
+//         b.created_at
+//       FROM bookings b
+//       JOIN users c ON b.customer_id = c.id
+//       JOIN users p ON b.provider_id = p.id
+//       WHERE b.broker_id = $1 
+//         AND b.metadata->>'group_booking' = 'true'
+//       ORDER BY b.created_at DESC
+//     `, [brokerId]);
+
+//     const groupedBookings = {};
+//     bookings.rows.forEach(booking => {
+//       const requestId = booking.original_request_id || `manual_${booking.id}`;
+//       if (!groupedBookings[requestId]) {
+//         groupedBookings[requestId] = {
+//           request_id: requestId,
+//           customer_name: booking.customer_name,
+//           provider_count: booking.provider_count,
+//           skill_required: booking.skill_required,
+//           description: booking.job_description,
+//           created_at: booking.created_at,
+//           bookings: []
+//         };
+//       }
+//       groupedBookings[requestId].bookings.push({
+//         booking_id: booking.id,
+//         provider_name: booking.provider_name,
+//         provider_mobile: booking.provider_mobile,
+//         total_amount: booking.total_amount,
+//         status: booking.status
+//       });
+//     });
+
+//     res.json({
+//       success: true,
+//       grouped_bookings: Object.values(groupedBookings)
+//     });
+//   } catch (error) {
+//     console.error('Error fetching group bookings:', error);
+//     res.status(500).json({ error: 'Failed to fetch group bookings: ' + error.message });
+//   }
+// });
+// backend/routes/brokers.js (or wherever your broker routes live)
 router.get('/group-bookings', authMiddleware, permit('broker'), async (req, res) => {
   try {
     const brokerId = req.user.id;
 
     const bookings = await db.query(`
       SELECT 
-        b.*,
+        b.id,
+        b.group_request_id,
+        b.customer_id,
+        b.provider_id,
+        b.total_amount,
+        b.status,
+        b.created_at,
         c.name AS customer_name,
         c.mobile_number AS customer_mobile,
         p.name AS provider_name,
         p.mobile_number AS provider_mobile,
-        b.metadata->>'group_booking' AS is_group_booking,
-        b.metadata->>'original_request_id' AS original_request_id,
         b.metadata->>'provider_count' AS provider_count,
         b.metadata->>'skill_required' AS skill_required,
-        b.metadata->>'description' AS job_description,
-        b.created_at
+        b.metadata->>'description' AS job_description
       FROM bookings b
       JOIN users c ON b.customer_id = c.id
       JOIN users p ON b.provider_id = p.id
       WHERE b.broker_id = $1 
-        AND b.metadata->>'group_booking' = 'true'
+        AND b.group_request_id IS NOT NULL
       ORDER BY b.created_at DESC
     `, [brokerId]);
 
     const groupedBookings = {};
     bookings.rows.forEach(booking => {
-      const requestId = booking.original_request_id || `manual_${booking.id}`;
+      const requestId = booking.group_request_id || `manual_${booking.id}`;
       if (!groupedBookings[requestId]) {
         groupedBookings[requestId] = {
           request_id: requestId,
@@ -588,4 +671,5 @@ router.get('/group-bookings', authMiddleware, permit('broker'), async (req, res)
     res.status(500).json({ error: 'Failed to fetch group bookings: ' + error.message });
   }
 });
+
 module.exports = router

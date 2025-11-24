@@ -1,5 +1,5 @@
 // customer/customer.js
-import io from "socket.io-client";
+// import io from "socket.io-client";
 import { initCustomerDashboard } from "./dashboard.js";
 import { setupLogoutButton } from "../shared/logout.js";
 import { tryGeolocationFallback } from "../shared/geolocation.js";

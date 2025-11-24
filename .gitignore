@@ -59,7 +59,8 @@ desktop.ini
 __pycache__/
 *.py[cod]
 *$py.class
-
+.py
+.txt
 # Database / data
 *.sqlite
 *.db

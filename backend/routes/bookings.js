@@ -119,61 +119,89 @@ router.get('/:id', authMiddleware, async (req, res) => {
 
 // Update booking status - FIXED VERSION
 // Update the existing status endpoint
-router.post('/bookings/:id/status', async (req, res) => {
+// router.post('/:id/status', async (req, res) => {
+//   try {
+//     const bookingId = req.params.id;
+//     const { status } = req.body;
+
+//     // For regular bookings
+//     const updateBooking = await db.query(
+//       `UPDATE customer_requests 
+//        SET status = ?, 
+//            ${status === 'completed' ? 'completed_at = NOW(),' : ''}
+//            updated_at = NOW()
+//        WHERE id = ?`,
+//       [status, bookingId]
+//     );
+
+//     // If this is a provider assignment (not main customer request)
+//     const isProviderAssignment = await db.query(
+//       `SELECT * FROM provider_assignments WHERE id = ?`,
+//       [bookingId]
+//     );
+
+//     if (isProviderAssignment.length > 0) {
+//       // Update provider assignment
+//       await db.query(
+//         `UPDATE provider_assignments 
+//          SET status = ?,
+//              ${status === 'completed' ? 'completed_at = NOW(),' : ''}
+//              updated_at = NOW()
+//          WHERE id = ?`,
+//         [status, bookingId]
+//       );
+
+//       // If completing, free up the provider
+//       if (status === 'completed') {
+//         await db.query(
+//           `UPDATE providers SET is_available = true 
+//            WHERE id = (SELECT provider_id FROM provider_assignments WHERE id = ?)`,
+//           [bookingId]
+//         );
+//       }
+//     }
+
+//     res.json({
+//       success: true,
+//       message: `Booking ${status} successfully`,
+//       booking: { id: bookingId, status }
+//     });
+
+//   } catch (error) {
+//     console.error('Status update error:', error);
+//     res.status(500).json({ error: 'Failed to update booking status' });
+//   }
+// });
+// backend/routes/bookings.js
+router.post('/:id/status', authMiddleware, async (req, res) => {
+  const bookingId = req.params.id;
+  const { status } = req.body;
+
   try {
-    const bookingId = req.params.id;
-    const { status } = req.body;
-
-    // For regular bookings
-    const updateBooking = await db.query(
-      `UPDATE customer_requests 
-       SET status = ?, 
-           ${status === 'completed' ? 'completed_at = NOW(),' : ''}
-           updated_at = NOW()
-       WHERE id = ?`,
-      [status, bookingId]
+    const r = await db.query(
+      `UPDATE bookings SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
+      [status.toUpperCase(), bookingId]
     );
 
-    // If this is a provider assignment (not main customer request)
-    const isProviderAssignment = await db.query(
-      `SELECT * FROM provider_assignments WHERE id = ?`,
-      [bookingId]
-    );
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Booking not found' });
 
-    if (isProviderAssignment.length > 0) {
-      // Update provider assignment
-      await db.query(
-        `UPDATE provider_assignments 
-         SET status = ?,
-             ${status === 'completed' ? 'completed_at = NOW(),' : ''}
-             updated_at = NOW()
-         WHERE id = ?`,
-        [status, bookingId]
-      );
+    const booking = r.rows[0];
+    const io = req.app.locals.io;
 
-      // If completing, free up the provider
-      if (status === 'completed') {
-        await db.query(
-          `UPDATE providers SET is_available = true 
-           WHERE id = (SELECT provider_id FROM provider_assignments WHERE id = ?)`,
-          [bookingId]
-        );
-      }
-    }
+    // Notify booking room + users
+    io.to(`booking_${booking.id}`).emit('booking_status_update', { booking_id: booking.id, status: booking.status });
+    if (booking.customer_id) io.to(`user_${booking.customer_id}`).emit('booking_status_update', { booking_id: booking.id, status: booking.status });
+    if (booking.provider_id) io.to(`user_${booking.provider_id}`).emit('booking_status_update', { booking_id: booking.id, status: booking.status });
 
-    res.json({
-      success: true,
-      message: `Booking ${status} successfully`,
-      booking: { id: bookingId, status }
-    });
-
+    res.json({ success: true, booking });
   } catch (error) {
     console.error('Status update error:', error);
     res.status(500).json({ error: 'Failed to update booking status' });
   }
 });
+
 // New endpoint to get only provider assignments (not main group bookings)
-router.get('/bookings/provider-bookings', async (req, res) => {
+router.get('/provider-bookings', async (req, res) => {
   try {
     const providerId = req.user.id;
     

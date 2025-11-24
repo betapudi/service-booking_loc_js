@@ -3,10 +3,12 @@ import { apiCall } from "../shared/api.js";
 import { showToast, switchTab } from "../shared/ui.js";
 import { setupSocket, getSocket } from "../shared/socket.js";
 import { initMap, addMarker, centerMap, mapInstance } from "../shared/map.js";
-import { loadProviderBookings, loadProviderHistory, loadProviderStats } from "./booking.js";
+import { loadProviderBookings, loadProviderHistory, loadProviderStats, renderActiveBookings } from "./booking.js";
 import { updateProviderLocation } from "./location.js";
 import { initializeProfileManager } from "../shared/profile-completion.js";
 
+// If you import renderBookingList from booking.js, remove the local one below.
+// Here we keep local renderers to ensure both tabs update together.
 let currentUser = null;
 let customerMarkers = [];
 let routeLayer = null;
@@ -28,29 +30,41 @@ export async function initProviderDashboard() {
     document.getElementById("userName").textContent = user.name || "Provider";
 
     setupTabHandlers();
+    setupNotificationHandlers();
     setupEventListeners();
 
-    // Socket listeners
-    setupSocket(user.id, token, {
-      new_booking: (booking) => {
+    // Socket listeners with standardized booking events
+    const socket = setupSocket(user.id, token, {
+      booking_created: (booking) => {
         showToast(`📋 New booking #${booking.id} from ${booking.customer_name}`, "info");
         renderIncomingBookingNotification(booking);
+        refreshAllLists();
       },
-      booking_status_update: () => {
-        loadProviderBookings(user.id);
-        loadProviderHistory(user.id);
+      booking_status_update: async () => {
+        await refreshAllLists();
       },
-      booking_completed: () => {
-        loadProviderBookings(user.id);
-        loadProviderHistory(user.id);
+      booking_completed: async () => {
+        await refreshAllLists();
       }
     });
 
-    await updateProviderLocation(user.id);
-    await loadProviderBookings(user.id);
-    await loadProviderHistory(user.id);
-    await loadProviderStats(user.id);
+    // Subscribe provider to their rooms
+    socket.emit("subscribe_provider", { provider_id: user.id });
+    socket.emit("subscribe_booking", { provider_id: user.id });
 
+    // Broadcast live location
+    navigator.geolocation.watchPosition((pos) => {
+      socket.emit("provider_location_update", {
+        provider_id: user.id,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy
+      });
+    });
+
+    await updateProviderLocation(user.id);
+    await refreshAllLists();
+    await loadProviderStats(user.id);
   } catch (error) {
     console.error("Dashboard initialization failed:", error);
     showToast("Failed to initialize dashboard", "error");
@@ -58,9 +72,42 @@ export async function initProviderDashboard() {
 }
 
 function setupTabHandlers() {
-  document.querySelectorAll(".tab-btn").forEach(btn => {
-    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+  // If your HTML uses .bottom-btn with data-card, adapt to switchTab usage
+  document.querySelectorAll(".bottom-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".bottom-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const cardId = btn.dataset.card;
+      switchCard(cardId);
+    });
   });
+}
+
+function switchCard(cardId) {
+  document.querySelectorAll(".side-card").forEach(card => {
+    if (card.id === cardId) card.classList.add("active");
+    else card.classList.remove("active");
+  });
+}
+
+function setupNotificationHandlers() {
+  const notifyBtn = document.getElementById("notifyBtn");
+  const dropdown = document.getElementById("notificationDropdown");
+  const clearBtn = document.getElementById("clearNotifications");
+  const countEl = document.getElementById("notificationCount");
+
+  if (notifyBtn && dropdown) {
+    notifyBtn.addEventListener("click", () => {
+      dropdown.classList.toggle("active");
+    });
+  }
+
+  if (clearBtn && countEl) {
+    clearBtn.addEventListener("click", () => {
+      document.getElementById("notificationList").innerHTML = "";
+      countEl.textContent = "0";
+    });
+  }
 }
 
 function setupEventListeners() {
@@ -72,11 +119,15 @@ function setupEventListeners() {
     if (e.target.classList.contains("accept-btn")) {
       await acceptBooking(bookingId);
       emitBookingResponse(bookingId, "ACCEPTED");
+      await refreshAllLists();
+      removeNotificationForBooking(bookingId);
     }
 
     if (e.target.classList.contains("reject-btn")) {
       await rejectBooking(bookingId);
       emitBookingResponse(bookingId, "REJECTED");
+      await refreshAllLists();
+      removeNotificationForBooking(bookingId);
     }
 
     if (e.target.classList.contains("complete-btn")) {
@@ -86,16 +137,19 @@ function setupEventListeners() {
         await markAsCompleted(bookingId);
       }
       emitBookingCompleted(bookingId);
+      await refreshAllLists();
     }
   });
 }
 
 function renderIncomingBookingNotification(booking) {
   const list = document.getElementById("notificationList");
-  if (!list) return;
+  const countEl = document.getElementById("notificationCount");
+  if (!list || !countEl) return;
 
   const item = document.createElement("div");
-  item.className = "notification-item";
+  item.className = "notification-item unread";
+  item.dataset.id = String(booking.id);
   item.innerHTML = `
     <strong>Booking #${booking.id}</strong><br/>
     From ${booking.customer_name} (${booking.customer_mobile})<br/>
@@ -103,6 +157,10 @@ function renderIncomingBookingNotification(booking) {
     <button class="reject-btn" data-id="${booking.id}">❌ Reject</button>
   `;
   list.prepend(item);
+
+  // increment badge
+  const currentCount = parseInt(countEl.textContent || "0", 10);
+  countEl.textContent = String(currentCount + 1);
 
   if (booking.customer_latitude && booking.customer_longitude) {
     addMarker(booking.customer_latitude, booking.customer_longitude, "Customer", "🧍");
@@ -119,16 +177,55 @@ function renderIncomingBookingNotification(booking) {
   }
 }
 
+function removeNotificationForBooking(bookingId) {
+  const list = document.getElementById("notificationList");
+  const countEl = document.getElementById("notificationCount");
+  if (!list || !countEl) return;
+  const item = list.querySelector(`.notification-item[data-id="${bookingId}"]`);
+  if (item) {
+    item.remove();
+    const currentCount = Math.max(0, parseInt(countEl.textContent || "0", 10) - 1);
+    countEl.textContent = String(currentCount);
+  }
+}
+
+async function refreshAllLists() {
+  // loadProviderBookings returns and renders incoming requests via booking.js renderers.
+  const res = await apiCall("/bookings/history");
+  const bookings = (res.bookings || []).filter(
+    // b => b.provider_id === currentUser.id && ["PENDING", "ACCEPTED", "IN_PROGRESS"].includes(b.status)
+    b => b.provider_id === currentUser.id
+  );
+
+  // Requests tab
+  renderBookingList(bookings);
+
+  // Active tab
+  renderActiveBookings(bookings);
+
+  // History tab
+  await loadProviderHistory(currentUser.id);
+
+  // 🔑 NEW: also update notification bell for pending requests
+  const pending = bookings.filter(b => b.status === "PENDING");
+  const list = document.getElementById("notificationList");
+  const countEl = document.getElementById("notificationCount");
+  if (list && countEl) {
+    list.innerHTML = ""; // clear old
+    pending.forEach(b => renderIncomingBookingNotification(b));
+    countEl.textContent = String(pending.length);
+  }
+}
+
 async function updateBookingStatus(bookingId, status, isGroupCompletion = false) {
   try {
     const endpoint = isGroupCompletion ? `/bookings/${bookingId}/group-complete` : `/bookings/${bookingId}/status`;
     const res = await apiCall(endpoint, { method: "POST", body: { status } });
 
     showToast(`Booking ${status.toLowerCase()} successfully`, "success");
-    await loadProviderBookings(currentUser.id);
-    await loadProviderHistory(currentUser.id);
+    await refreshAllLists();
 
-    if (res.status === "ACCEPTED") {
+    if (res.status === "ACCEPTED" && res.provider_location && res.customer_location) {
       drawAssignedRoute(res.provider_location, res.customer_location);
     }
     return res;
@@ -155,6 +252,7 @@ async function acceptBooking(bookingId) {
   }
 }
 
+
 async function rejectBooking(bookingId) {
   try {
     await updateBookingStatus(bookingId, "CANCELLED");
@@ -166,7 +264,7 @@ async function rejectBooking(bookingId) {
 async function markAsCompleted(bookingId) {
   try {
     const booking = await fetchBookingDetails(bookingId);
-    if (booking.group_id) {
+    if (booking?.group_id) {
       await updateBookingStatus(bookingId, "COMPLETED", true);
     } else {
       await updateBookingStatus(bookingId, "COMPLETED");
@@ -175,8 +273,7 @@ async function markAsCompleted(bookingId) {
     customerMarkers = [];
     clearRoute();
     showToast("Booking marked as completed successfully", "success");
-    await loadProviderBookings(currentUser.id);
-    await loadProviderHistory(currentUser.id);
+    await refreshAllLists();
   } catch (error) {
     console.error("Failed to mark booking as completed:", error);
     showToast("Failed to complete booking", "error");
@@ -186,7 +283,7 @@ async function markAsCompleted(bookingId) {
 async function completeGroupBooking(bookingId) {
   try {
     const booking = await fetchBookingDetails(bookingId);
-    if (!booking.group_id) {
+    if (!booking?.group_id) {
       showToast("This is not a group booking", "error");
       return;
     }
@@ -199,8 +296,7 @@ async function completeGroupBooking(bookingId) {
       customerMarkers.forEach(m => mapInstance.removeLayer(m));
       customerMarkers = [];
       clearRoute();
-      await loadProviderBookings(currentUser.id);
-      await loadProviderHistory(currentUser.id);
+      await refreshAllLists();
     }
   } catch (error) {
     console.error("Failed to complete group booking:", error);
@@ -251,32 +347,18 @@ export function renderBookingList(bookings) {
   const container = document.getElementById("requests-container");
   if (!container) return;
 
-  container.innerHTML = bookings.map(b => {
-    let actions = "";
-    const isGroupBooking = b.group_id || b.is_group_booking;
+  container.innerHTML = bookings
+    .filter(b => b.status === "PENDING")   // 🔑 only show pending requests
+    .map(b => {
+      let actions = "";
+      const isGroupBooking = b.group_id || b.is_group_booking;
 
-    if (b.status === "PENDING") {
       actions = `
-        <button class="accept-btn" data-id="${b.id}">✅ Accept</button>
-        <button class="reject-btn" data-id="${b.id}">❌ Reject</button>
-      `;
-    } else if (b.status === "ACCEPTED" || b.status === "IN_PROGRESS") {
-      if (isGroupBooking) {
-        actions = `
-          <button class="accepted-btn" disabled>✅ Accepted (Group)</button>
-          <button class="reject-btn" data-id="${b.id}">❌ Cancel</button>
-          <button class="complete-btn" data-id="${b.id}" data-group="true">✅ Complete Group</button>
-        `;
-      } else {
-        actions = `
-          <button class="accepted-btn" disabled>✅ Accepted</button>
-          <button class="reject-btn" data-id="${b.id}">❌ Cancel</button>
-          <button class="complete-btn" data-id="${b.id}">✅ Complete</button>
-        `;
-      }
-    }
+      <button class="accept-btn" data-id="${b.id}">✅ Accept</button>
+      <button class="reject-btn" data-id="${b.id}">❌ Reject</button>
+    `;
 
-    return `
+      return `
       <div class="booking-card ${isGroupBooking ? 'group-booking' : 'individual-booking'}">
         <div class="booking-header">
           <strong>Booking #${b.id}</strong>
@@ -293,7 +375,7 @@ export function renderBookingList(bookings) {
         </div>
       </div>
     `;
-  }).join("");
+    }).join("") || `<p class="no-bookings">No incoming requests</p>`;
 }
 
 async function fetchBookingDetails(bookingId) {

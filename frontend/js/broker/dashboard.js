@@ -21,23 +21,36 @@ export async function initBrokerDashboard() {
   setupTabHandlers();
 
   // ✅ Socket listeners
-  setupSocket(user.id, token, {
-    new_group_request: (groupRequest) => {
-      showToast(`📨 New group request #${groupRequest.id} from ${groupRequest.customer_name}`, "info");
-      renderIncomingGroupRequest(groupRequest);
+  const socket = setupSocket(user.id, token, {
+    group_request_created: (req) => {
+      showToast(`📨 New group request #${req.id} from ${req.customer_name}`, "info");
+      renderIncomingGroupRequest(req);
       loadGroupRequests(user.id);
     },
-    provider_registered: () => loadBrokerProviders(user.id),
-    // 🔧 NEW: listen for group_request_update
     group_request_update: (data) => {
-      const { group_request_id, status } = data;
-      showToast(`🔄 Group request #${group_request_id} updated: ${status}`, "info");
+      showToast(`🔄 Group request #${data.group_request_id} updated: ${data.status}`, "info");
       loadGroupRequests(user.id);
       loadGroupBookings(user.id);
+    },
+    user_registered: (u) => {
+      if (u.role === "provider" && u.registered_by_broker === user.id) {
+        showToast(`✅ Provider registered: ${u.name}`, "success");
+        loadBrokerProviders(user.id);
+      }
+    },
+    user_verified: (u) => {
+      if (u.role === "provider" && u.verified_by_broker === user.id) {
+        showToast(`✅ Provider verified: ${u.mobile_number}`, "info");
+        loadBrokerProviders(user.id);
+      }
     },
     booking_status_update: () => loadGroupBookings(user.id),
     booking_completed: () => loadGroupBookings(user.id)
   });
+
+  // ✅ After connecting, subscribe broker to their rooms
+  socket.emit("subscribe_provider", { broker_id: user.id });
+  socket.emit("subscribe_booking", { broker_id: user.id });
 
   await loadGroupRequests(user.id);
   await loadBrokerProviders(user.id);

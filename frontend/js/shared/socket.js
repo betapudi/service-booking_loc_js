@@ -1,4 +1,5 @@
 // shared/socket.js
+
 let socket;
 
 export function setupSocket(userId, token, handlers = {}) {

@@ -279,10 +279,9 @@ router.post('/group-requests/:id/cancel', authMiddleware, permit('customer'), as
       `, [requestId, customerId]);
 
       await client.query('COMMIT');
-
-      const io = req.app.locals.io;
       
-      // Notify all providers in the group
+      const io = req.app.locals.io;      
+
       for (const booking of bookingsUpdate.rows) {
         if (booking.provider_id) {
           io.to(`user_${booking.provider_id}`).emit('booking_status', { booking });
@@ -529,71 +528,71 @@ router.post('/bookings/:id/complete', authMiddleware, permit('customer'), async 
 });
 // Fix the group completion endpoint to update provider bookings
 // Fix the group completion endpoint to update provider bookings
-router.post('/bookings/:id/group-complete', async (req, res) => {
-  try {
-    const bookingId = req.params.id;
+// router.post('/bookings/:id/group-complete', async (req, res) => {
+//   try {
+//     const bookingId = req.params.id;
 
-    // 1. Get the main group booking details from customer_requests
-    const mainBooking = await db.query(
-      `SELECT * FROM customer_requests WHERE id = ?`,
-      [bookingId]
-    );
+//     // 1. Get the main group booking details from customer_requests
+//     const mainBooking = await db.query(
+//       `SELECT * FROM customer_requests WHERE id = ?`,
+//       [bookingId]
+//     );
 
-    if (!mainBooking.length) {
-      return res.status(404).json({ error: 'Booking not found' });
-    }
+//     if (!mainBooking.length) {
+//       return res.status(404).json({ error: 'Booking not found' });
+//     }
 
-    const groupId = mainBooking[0].group_id;
+//     const groupId = mainBooking[0].group_id;
 
-    if (!groupId) {
-      return res.status(400).json({ error: 'This is not a group booking' });
-    }
+//     if (!groupId) {
+//       return res.status(400).json({ error: 'This is not a group booking' });
+//     }
 
-    // 2. Update ALL provider bookings in the bookings table for this group
-    const updateProviderBookings = await db.query(
-      `UPDATE bookings 
-       SET status = 'COMPLETED', 
-           group_request_id = ?,
-           completed_at = NOW()
-       WHERE customer_request_id = ? 
-       AND status IN ('PENDING', 'ACCEPTED', 'IN_PROGRESS')`,
-      [bookingId, bookingId]  // Set group_request_id to main booking ID
-    );
+//     // 2. Update ALL provider bookings in the bookings table for this group
+//     const updateProviderBookings = await db.query(
+//       `UPDATE bookings 
+//        SET status = 'COMPLETED', 
+//            group_request_id = ?,
+//            completed_at = NOW()
+//        WHERE customer_request_id = ? 
+//        AND status IN ('PENDING', 'ACCEPTED', 'IN_PROGRESS')`,
+//       [bookingId, bookingId]  // Set group_request_id to main booking ID
+//     );
 
-    // 3. Also update the main customer request if not already completed
-    const updateMainBooking = await db.query(
-      `UPDATE customer_requests 
-       SET status = 'completed', 
-           completed_at = NOW()
-       WHERE id = ? AND status != 'completed'`,
-      [bookingId]
-    );
+//     // 3. Also update the main customer request if not already completed
+//     const updateMainBooking = await db.query(
+//       `UPDATE customer_requests 
+//        SET status = 'completed', 
+//            completed_at = NOW()
+//        WHERE id = ? AND status != 'completed'`,
+//       [bookingId]
+//     );
 
-    // 4. Update provider availability
-    const providers = await db.query(
-      `SELECT provider_id FROM bookings WHERE customer_request_id = ? AND provider_id IS NOT NULL`,
-      [bookingId]
-    );
+//     // 4. Update provider availability
+//     const providers = await db.query(
+//       `SELECT provider_id FROM bookings WHERE customer_request_id = ? AND provider_id IS NOT NULL`,
+//       [bookingId]
+//     );
 
-    for (const provider of providers) {
-      await db.query(
-        `UPDATE providers SET is_available = true WHERE id = ?`,
-        [provider.provider_id]
-      );
-    }
+//     for (const provider of providers) {
+//       await db.query(
+//         `UPDATE providers SET is_available = true WHERE id = ?`,
+//         [provider.provider_id]
+//       );
+//     }
 
-    res.json({
-      success: true,
-      message: 'Group booking completed successfully',
-      updated_provider_bookings: updateProviderBookings.affectedRows,
-      providers_freed: providers.length
-    });
+//     res.json({
+//       success: true,
+//       message: 'Group booking completed successfully',
+//       updated_provider_bookings: updateProviderBookings.affectedRows,
+//       providers_freed: providers.length
+//     });
 
-  } catch (error) {
-    console.error('Group completion error:', error);
-    res.status(500).json({ error: 'Failed to complete group booking' });
-  }
-});
+//   } catch (error) {
+//     console.error('Group completion error:', error);
+//     res.status(500).json({ error: 'Failed to complete group booking' });
+//   }
+// });
 // Provider: get customer location
 router.get('/:customerId/location', authMiddleware, permit('provider'), async (req, res) => {
   try {

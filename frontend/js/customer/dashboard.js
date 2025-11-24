@@ -26,51 +26,78 @@ export async function initCustomerDashboard() {
   initMap("mapdiv", 17.385, 78.4867, 13);
   loadUserLocation();
   setupTabHandlers();
-
-  // ✅ Socket listeners
-  setupSocket(user.id, token, {
+  const socket = setupSocket(user.id, token, {
     booking_status_update: (data) => {
       const booking = data.booking || data;
-      const status = booking.status;
-
-      if (status === "ACCEPTED" || status === "IN_PROGRESS") {
-        if (booking.provider_latitude && booking.customer_latitude) {
-          startRouteTracking(booking);
-        } else {
-          showToast(`Booking #${booking.id} accepted. Location data missing for tracking.`, "warning");
-        }
-      } else if (["COMPLETED", "CANCELLED", "REJECTED"].includes(status)) {
-        if (typeof window.stopRouteTracking === "function") {
-          window.stopRouteTracking();
-        }
-      }
-
-      const messages = {
-        PENDING: `⌛ Booking #${booking.id} is pending acceptance`,
-        ACCEPTED: `✅ Booking #${booking.id} accepted by ${booking.provider_name}. Tracking started!`,
-        IN_PROGRESS: `🛠️ Booking #${booking.id} is now in progress!`,
-        REJECTED: `❌ Booking #${booking.id} rejected by ${booking.provider_name}`,
-        COMPLETED: `✅ Booking #${booking.id} marked as completed`,
-        CANCELLED: `❌ Booking #${booking.id} was cancelled`
-      };
-
-      showToast(messages[status] || `Booking #${booking.id} updated`, "info");
-      loadCustomerBookings(user.id, (b) => {
-        if (b.status === "ACCEPTED" || b.status === "IN_PROGRESS") {
-          startRouteTracking(b);
-        }
-      });
+      // handle status changes (accepted, in_progress, completed, cancelled)
+      showToast(`Booking #${booking.id} updated: ${booking.status}`, "info");
+      loadCustomerBookings(user.id);
     },
-
-    new_booking: () => loadCustomerBookings(user.id),
-
-    // ✅ NEW: listen globally for broker updates on group requests
+    booking_created: (booking) => {
+      showToast(`📋 New booking #${booking.id} created`, "success");
+      loadCustomerBookings(user.id);
+    },
+    provider_location_update: (loc) => {
+      updateProviderMarker(loc);
+    },
     group_request_update: (data) => {
-      const { group_request_id, status } = data;
-      showToast(`🔄 Group request #${group_request_id} updated by broker: ${status}`, "info");
+      showToast(`🔄 Group request #${data.group_request_id} updated: ${data.status}`, "info");
       loadActiveGroupRequests();
     }
   });
+
+  // Subscribe to customer-specific rooms
+  socket.emit("subscribe_booking", { customer_id: user.id });
+  socket.emit("subscribe_provider", { customer_id: user.id });
+
+  // ✅ Socket listeners
+  // setupSocket(user.id, token, {
+  //   booking_status_update: (data) => {
+  //     const booking = data.booking || data;
+  //     const status = booking.status;
+
+  //     if (status === "ACCEPTED" || status === "IN_PROGRESS") {
+  //       if (booking.provider_latitude && booking.customer_latitude) {
+  //         startRouteTracking(booking);
+  //       } else {
+  //         showToast(`Booking #${booking.id} accepted. Location data missing for tracking.`, "warning");
+  //       }
+  //     } else if (["COMPLETED", "CANCELLED", "REJECTED"].includes(status)) {
+  //       if (typeof window.stopRouteTracking === "function") {
+  //         window.stopRouteTracking();
+  //       }
+  //     }
+
+  //     const messages = {
+  //       PENDING: `⌛ Booking #${booking.id} is pending acceptance`,
+  //       ACCEPTED: `✅ Booking #${booking.id} accepted by ${booking.provider_name}. Tracking started!`,
+  //       IN_PROGRESS: `🛠️ Booking #${booking.id} is now in progress!`,
+  //       REJECTED: `❌ Booking #${booking.id} rejected by ${booking.provider_name}`,
+  //       COMPLETED: `✅ Booking #${booking.id} marked as completed`,
+  //       CANCELLED: `❌ Booking #${booking.id} was cancelled`
+  //     };
+
+  //     showToast(messages[status] || `Booking #${booking.id} updated`, "info");
+  //     loadCustomerBookings(user.id, (b) => {
+  //       if (b.status === "ACCEPTED" || b.status === "IN_PROGRESS") {
+  //         startRouteTracking(b);
+  //       }
+  //     });
+  //   },
+
+  //   new_booking: () => loadCustomerBookings(user.id),
+
+  //   // ✅ NEW: listen globally for broker updates on group requests
+  //   group_request_update: (data) => {
+  //     const { group_request_id, status } = data;
+  //     showToast(`🔄 Group request #${group_request_id} updated by broker: ${status}`, "info");
+  //     loadActiveGroupRequests();
+  //   }
+  // });
+
+  // ✅ After connecting, subscribe to customer-specific rooms
+  // socket.emit("subscribe_booking", { customer_id: user.id });
+  // socket.emit("subscribe_provider", { customer_id: user.id });
 
   // Make these functions available globally
   window.loadActiveGroupRequests = loadActiveGroupRequests;

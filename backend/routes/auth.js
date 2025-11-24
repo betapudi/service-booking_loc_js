@@ -1,3 +1,4 @@
+// backend/routes/auth.js
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
@@ -73,16 +74,16 @@ router.post(
 
       if (existingUser.rowCount > 0) {
         const existingRole = existingUser.rows[0].role;
-        
+
         // If role is provided and doesn't match existing role, return error
         if (role && role !== existingRole) {
-          return res.status(409).json({ 
+          return res.status(409).json({
             error: `Mobile number already registered as ${existingRole}`,
             existing_role: existingRole,
             message: `This number is already registered as a ${existingRole}. Please login as ${existingRole} or use a different number.`
           });
         }
-        
+
         // If no role provided but user exists, allow OTP for login
         console.log(`Mobile number exists as ${existingRole}, sending OTP for login`);
       } else if (role) {
@@ -114,10 +115,10 @@ router.post(
       console.log(`OTP (dev) for ${mobile_number}: ${otp} (expires: ${expiresAt.toISOString()})`);
 
       // Return OTP in response for development convenience. Remove in production.
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'OTP sent successfully',
-        otp:otp,
+        otp: otp,
         existing_user: existingUser.rowCount > 0,
         existing_role: existingUser.rowCount > 0 ? existingUser.rows[0].role : null
       });
@@ -133,7 +134,7 @@ router.post(
  */
 router.post(
   '/resendOtp',
-  [body('mobile_number').isMobilePhone('any')],
+  [body('mobile_number').isMobilePhone('any')], 
   async (req, res) => {
     const validationError = sendValidationErrors(req, res);
     if (validationError) return;
@@ -141,7 +142,7 @@ router.post(
     try {
       const { mobile_number } = req.body;
       // const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      const otp = 123456; // fixed OTP for development/testing
+      const otp = '123456'; // fixed OTP for development/testing
       const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60000);
 
       await db.query(
@@ -157,7 +158,6 @@ router.post(
     }
   }
 );
-
 /**
  * Verify OTP and issue token
  * Body: { mobile_number, otp }
@@ -199,11 +199,11 @@ router.post(
 
       let user = userRes.rows[0];
 
-      // Verify user
+      // Verify user if not already verified
       if (!user.is_verified) {
         await db.query(`UPDATE users SET is_verified=true WHERE id=$1`, [user.id]);
-        const refreshed = await db.query(`SELECT * FROM users WHERE id=$1`, [user.id]);
-        user = refreshed.rows[0];
+        const refreshedRes = await db.query(`SELECT * FROM users WHERE id=$1`, [user.id]);
+        user = refreshedRes.rows[0];
       }
 
       // Issue JWT
@@ -211,6 +211,17 @@ router.post(
         id: user.id,
         mobile_number: user.mobile_number,
         role: user.role,
+      });
+
+      const io = req.app.locals.io;
+
+      // ✅ Emit standardized event
+      io.emit("user_verified", {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        mobile_number: user.mobile_number,
+        is_verified: user.is_verified
       });
 
       res.json({
@@ -224,12 +235,14 @@ router.post(
           location_id: user.location_id,
         },
       });
+
     } catch (err) {
       console.error('Error in /auth/verify-otp:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 );
+
 
 
 /**
@@ -291,7 +304,20 @@ router.post(
       );
 
       console.log('User inserted:', result.rows[0]);
-      res.status(201).json({ user: result.rows[0] });
+
+      const newUser = result.rows[0];
+      const io = req.app.locals.io;
+
+      io.emit("user_registered", {
+        id: newUser.id,
+        name: newUser.name,
+        role: newUser.role,
+        mobile_number: newUser.mobile_number,
+        is_verified: newUser.is_verified,
+        registered_by_broker: newUser.registered_by_broker || null
+      });
+      res.status(201).json({ user: newUser });
+
     } catch (err) {
       console.error('Register error:', err);
       res.status(500).json({ error: 'Internal Server Error' });
@@ -315,6 +341,12 @@ router.post(
         available: !conflictCheck.conflict,
         ...conflictCheck
       });
+
+      const user = refreshed.rows[0];
+      const io = req.app.locals.io;
+      io.emit("user_verified", { id: user.id, mobile_number: user.mobile_number });
+      res.json({ token, user });
+
     } catch (err) {
       console.error('Error checking mobile:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -352,6 +384,20 @@ router.post('/completeProfile', async (req, res) => {
       : [name, locationId || null, userId];
 
     await db.query(updateQuery, updateParams);
+    // After updating profile and setting is_verified=true
+    const io = req.app.locals.io;
+    const updatedUser = await db.query('SELECT * FROM users WHERE id=$1', [userId]);
+
+    if (updatedUser.rowCount > 0) {
+      const user = updatedUser.rows[0];
+      io.emit("user_verified", {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        mobile_number: user.mobile_number,
+        is_verified: user.is_verified
+      });;
+    }
 
     if (Array.isArray(skills)) {
       for (const s of skills) {
@@ -365,6 +411,8 @@ router.post('/completeProfile', async (req, res) => {
       }
     }
     res.json({ ok: true });
+
+
   } catch (err) {
     console.error('Error in /auth/completeProfile:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -398,7 +446,7 @@ async function sendOtpWithCleanup(mobile_number, otp, expiresAt) {
     `DELETE FROM otps WHERE mobile_number=$1 AND (used=true OR expires_at <= NOW())`,
     [mobile_number]
   );
-  
+
   // Then insert new OTP
   await db.query(
     `INSERT INTO otps (mobile_number, otp, expires_at, used, created_at) VALUES ($1, $2, $3, $4, NOW())`,
