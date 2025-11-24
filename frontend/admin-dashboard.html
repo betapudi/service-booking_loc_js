@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Dashboard - WorkConnect</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/admin.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="assets/icons/logo.svg" class="brand-icon" alt="WorkConnect" />
+      WorkConnect — Admin
+    </div>
+    <div class="actions">
+      <button id="logoutBtn" class="header-btn">Logout</button>
+    </div>
+  </header>
+
+  <main class="admin-container">
+    <section class="panel">
+      <h2>📊 Platform Analytics</h2>
+      <div class="stats-grid">
+        <div id="totalRevenue" class="stat-card">₹0</div>
+        <div id="bookingStats" class="stat-card">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>👥 User Management</h2>
+      <div class="filters">
+        <select id="filterRole" class="input">
+          <option value="">All Roles</option>
+          <option value="customer">Customer</option>
+          <option value="provider">Provider</option>
+          <option value="broker">Broker</option>
+        </select>
+        <input type="text" id="searchQuery" class="input" placeholder="Search by name or mobile" />
+        <button id="searchBtn" class="btn">Search</button>
+      </div>
+      <div id="userList" class="user-list"></div>
+    </section>
+  </main>
+
+  <script type="module" src="js/admin/admin.js"></script>
+</body>
+</html>

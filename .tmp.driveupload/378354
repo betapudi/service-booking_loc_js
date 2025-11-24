@@ -1,0 +1,98 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log
+
+# Environment / Secrets
+.env
+.env.local
+.env.*.local
+secrets.*.json
+*.key
+*.pem
+*.p12
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pm2.log
+pids/
+*.pid
+*.pid.lock
+
+# Build / Output
+dist/
+build/
+out/
+public/build/
+coverage/
+coverage-report/
+*.tgz
+
+# Frontend frameworks / caches
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.vite/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / Editor
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.code-workspace
+
+# Python artifacts (if any utilities/scripts present)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database / data
+*.sqlite
+*.db
+*.sql
+data/
+dump/
+
+# Docker / Kubernetes
+docker-compose.override.yml
+docker-compose.*.yml
+docker/*.log
+
+# Misc / generated
+*.env.*.local
+*.log.*
+*.cache
+coverage/
+tmp/
+temp/
+.trash/
+
+# OSRM / routing cache (if generated)
+osrm-data/
+*.osrm
+*.osrm.* 
+
+# Other
+.vagrant/
+.idea/
+.idea_modules/
+.reports/
+
+# Ensure the repo can still track important config files:
+# (Remove these lines if you want to ignore lockfiles or other specific files)
+# !package-lock.json
+# !yarn.lock

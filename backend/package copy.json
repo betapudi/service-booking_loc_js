@@ -1,0 +1,27 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Backend API for service app",
+  "main": "server.js",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "express-validator": "^7.2.1",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "socket.io": "^4.8.1"
+  },
+  "scripts": {
+    "frontend:dev": "NODE_ENV=development node frontend-server.js",
+    "frontend:prod": "NODE_ENV=production node frontend-server.js",
+    "frontend:start": "node frontend-server.js",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend:dev\"",
+    "backend": "node server.js",
+    "start": "NODE_ENV=production npm run frontend:prod"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

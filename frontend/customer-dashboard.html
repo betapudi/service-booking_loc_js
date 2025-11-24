@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Customer Dashboard - WorkConnect</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- <link rel="stylesheet" href="css/main.css" /> -->
+  <link rel="stylesheet" href="css/customer.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+</head>
+
+<body>
+  <header>
+    <div class="brand">
+      <img src="assets/icons/logo.svg" class="brand-icon" alt="WorkConnect" />
+      <span class="brand-name">WorkConnect</span>
+    </div>
+
+    <div class="actions">
+      <button id="notifyBtn" class="icon-btn" aria-label="Notifications">
+        🔔
+        <span class="badge" id="notificationCount">3</span>
+      </button>
+      <div id="notificationDropdown" class="notification-dropdown">
+        <div class="notification-header">
+          <span>Notifications</span>
+          <button id="clearNotifications"
+            style="background:none;border:none;color:white;font-size:0.9rem;cursor:pointer;">Clear</button>
+        </div>
+        <div class="notification-list" id="notificationList">
+          <!-- Notifications dynamically inserted here -->
+        </div>
+      </div>
+
+      <img src="assets/icons/user-avatar.svg" class="profile-avatar" alt="User avatar" width="34" height="34" />
+      <button id="logoutBtn" class="logout-btn" aria-label="Logout">🚪 Logout</button>
+    </div>
+  </header>
+
+
+
+  <nav class="breadcrumb">
+    <ul>
+      <li><a href="dashboard.html">Dashboard</a></li>
+      <li><a href="#" aria-current="page">Customer</a></li>
+      <li><a href="#" aria-current="page" <span id="userName"></span></a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <!-- <section class="panel">
+      <div class="panel-header">
+        Welcome, <span id="userName"></span>
+      </div>
+      <div id="profileStatusBanner" class="profile-banner hidden"></div>
+    </section> -->
+
+    <section class="panel">
+      <!-- <div class="panel-header">🗺️ Your Location and Route</div> -->
+      <div id="mapdiv"></div>
+      <div id="routeInfo" class="route-info-panel"></div>
+    </section>
+
+    <!-- Bottom Sheet Tabs -->
+    <!-- BOTTOM SHEET PANEL (Replaces Tabs Container) -->
+    <!-- Floating Bottom Bar -->
+    <div id="bottomBar" class="bottom-bar">
+      <button class="bottom-btn active" data-card="providers-card">🔧<br><span>Service Providers</span></button>
+      <button class="bottom-btn" data-card="bookings-card">📋<br><span>Individual Bookings</span></button>
+      <button class="bottom-btn" data-card="group-card">👥<br><span>Group Bookings</span></button>
+      <button class="bottom-btn" data-card="history-card">📊<br><span>Bookings History</span></button>
+      <button class="bottom-btn" data-card="stats-card">📈<br><span>Stats</span></button>
+    </div>
+
+    <!-- Side Cards -->
+    <div id="providers-card" class="side-card hidden">
+      <div class="panel-header">Nearby Providers</div>
+      <div class="provider-filters">
+        <label for="skillFilter">Skill:</label>
+        <select id="skillFilter">
+          <option value="">All Skills</option>
+        </select>
+        <label for="ratingFilter">Rating:</label>
+        <select id="ratingFilter">
+          <option value="">Any</option>
+          <option value="4.5">4.5+</option>
+          <option value="4.0">4.0+</option>
+          <option value="3.5">3.5+</option>
+          <option value="3.0">3.0+</option>
+        </select>
+      </div>
+      <div id="nearbyProviders"></div>
+    </div>
+
+    <div id="group-card" class="side-card">
+      <div class="panel-header">Group Requests</div>
+      <button id="openGroupRequestModalBtn" class="add-provider-btn">➕ New Group Booking Request</button>
+      <div id="activeGroupRequests"></div>
+    </div>
+
+    <div id="bookings-card" class="side-card">
+      <div class="panel-header">Active Bookings</div>
+      <div id="bookingRequests"></div>
+    </div>
+
+    <!-- In your customer-dashboard.html, update the history-card section -->
+    <div id="history-card" class="side-card">
+      <div class="panel-header">Booking History</div>
+      <div class="history-tabs">
+        <button class="history-tab active" data-tab="individual">Individual</button>
+        <button class="history-tab" data-tab="group">Group</button>
+      </div>
+      <div id="bookingHistory">
+        <!-- Content will be dynamically populated -->
+      </div>
+    </div>
+
+    <div id="stats-card" class="side-card">
+      <div class="panel-header">Performance Stats</div>
+      <div class="stats-grid">
+        <div id="totalBookings">Total Bookings: 0</div>
+        <div id="activeBookings">Active Requests: 0</div>
+        <div id="completedBookings">Completed: 0</div>
+        <div id="totalSpent">Total Spent: ₹0</div>
+      </div>
+    </div>
+
+
+    <!-- Group Booking Request Modal -->
+    <div id="groupRequestModal" class="modal hidden" role="dialog" aria-modal="true"
+      aria-labelledby="groupRequestModalTitle">
+      <div class="modal-content">
+        <button type="button" id="closeGroupRequestModalBtn" class="modal-close-btn" aria-label="Close">✖</button>
+        <h3 id="groupRequestModalTitle">📋 Send Group Booking Request</h3>
+
+        <form id="groupRequestForm">
+          <div class="form-section">
+            <label for="groupSkills">🛠️ Required Skills</label>
+            <select id="groupSkills" multiple required></select>
+          </div>
+
+          <div class="form-section">
+            <label for="groupSize">👥 Group Size</label>
+            <input type="number" id="groupSize" min="1" required />
+          </div>
+
+          <div class="form-section">
+            <label for="groupBroker">🧑‍💼 Select Broker</label>
+            <select id="groupBroker" required>
+              <option value="">-- Choose a broker --</option>
+            </select>
+          </div>
+
+          <div class="form-section">
+            <label for="groupState">📍 State</label>
+            <select id="groupState" required></select>
+
+            <label for="groupDistrict">District</label>
+            <select id="groupDistrict" required disabled></select>
+
+            <label for="groupTaluk">Taluk</label>
+            <select id="groupTaluk" required disabled></select>
+
+            <label for="groupVillage">Village</label>
+            <select id="groupVillage" required disabled></select>
+          </div>
+
+          <div class="form-section">
+            <label for="preferredDate">📅 Preferred Date</label>
+            <input type="date" id="preferredDate" required />
+          </div>
+
+          <div class="form-section">
+            <label for="budgetRange">💰 Budget Range</label>
+            <input type="text" id="budgetRange" placeholder="e.g. ₹5000 - ₹8000" required />
+            <small id="budgetError" class="error-msg hidden">Invalid format. Use ₹min - ₹max.</small>
+          </div>
+
+          <div class="form-section">
+            <label for="groupNotes">📝 Additional Notes</label>
+            <textarea id="groupNotes" rows="3" placeholder="Any special instructions or preferences..."></textarea>
+          </div>
+
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary">✅ Send Request</button>
+            <button type="button" id="cancelGroupRequestBtn" class="btn btn-secondary">❌ Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+
+    <div id="loadingSpinner" class="spinner hidden"></div>
+    <!-- Translucent background overlay -->
+
+  </main>
+
+  <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/polyline@1.1.1/index.js"></script>
+  <script type="module" src="js/customer/customer.js"></script>
+  
+  <div id="overlay" class="overlay"></div>
+</body>
+
+</html>

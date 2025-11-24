@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Verify OTP - WorkConnect</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/main.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <style>
+    /* ===== LAYOUT ===== */
+    body {
+      margin: 0;
+      font-family: "Inter", sans-serif;
+      background: #f3f4f6;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ===== HEADER ===== */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1.25rem;
+      background: linear-gradient(90deg, #2563eb, #1d4ed8);
+      color: white;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 1.4rem;
+      font-weight: 600;
+    }
+
+    .brand img {
+      width: 40px;
+      height: 40px;
+    }
+
+    /* ===== CARD WRAPPER ===== */
+    .verify-wrapper {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .verify-card {
+      background: #fff;
+      border-radius: 1rem;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .verify-card img.logo {
+      width: 70px;
+      height: 70px;
+      margin-bottom: 0.5rem;
+    }
+
+    .verify-card h1 {
+      margin: 0;
+      font-size: 1.8rem;
+      color: #1d4ed8;
+      margin-bottom: 0.5rem;
+    }
+
+    .verify-card p {
+      color: #555;
+      margin-bottom: 1.5rem;
+      font-size: 0.95rem;
+    }
+
+    /* ===== OTP INPUT ===== */
+    .input {
+      width: 100%;
+      padding: 0.8rem;
+      margin-bottom: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 0.6rem;
+      font-size: 1rem;
+      text-align: center;
+      letter-spacing: 0.3rem;
+      font-weight: 600;
+      transition: border-color 0.2s ease;
+    }
+
+    .input:focus {
+      border-color: #2563eb;
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    /* ===== BUTTONS ===== */
+    .btn {
+      width: 100%;
+      padding: 0.9rem;
+      border: none;
+      border-radius: 0.6rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(90deg, #2563eb, #1d4ed8);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+    }
+
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #333;
+      margin-top: 0.8rem;
+    }
+
+    .btn-secondary:hover {
+      background: #d1d5db;
+    }
+
+    /* ===== ALT LINK ===== */
+    .alt {
+      margin-top: 1.5rem;
+      font-size: 0.9rem;
+    }
+
+    .alt a {
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .alt a:hover {
+      text-decoration: underline;
+    }
+
+    /* ===== ANIMATION ===== */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(15px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 480px) {
+      header {
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .verify-card {
+        padding: 2rem 1.5rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="brand">
+      <img src="assets/icons/logo.svg" alt="WorkConnect Logo" />
+      <span>WorkConnect</span>
+    </div>
+  </header>
+
+  <main class="verify-wrapper">
+    <div class="verify-card">
+      <img src="assets/icons/logo.svg" alt="WorkConnect" class="logo" />
+      <h1>Verify OTP</h1>
+      <p>Enter the 6-digit OTP sent to your mobile number</p>
+
+      <input type="text" id="otp" class="input" placeholder="••••••" maxlength="6" />
+
+      <button id="verifyOtpBtn" class="btn btn-primary">Verify & Login</button>
+      <button id="resendOtpBtn" class="btn btn-secondary">Resend OTP</button>
+
+      <p class="alt"><a href="index.html">← Back to Login</a></p>
+    </div>
+  </main>
+
+  <script type="module" src="js/verify-otp.js"></script>
+</body>
+
+</html>
