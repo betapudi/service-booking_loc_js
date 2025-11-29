@@ -1,3 +1,4 @@
+// backend/backend-server.js
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -54,10 +55,13 @@ function notifyUser(userId, event, data) {
 // --------------------
 // Single unified connection handler
 // --------------------
+// --------------------
+// Single unified connection handler
+// --------------------
 io.on("connection", (socket) => {
   console.log("🟢 Socket connected:", socket.id);
 
-  // Basic identity registration
+  // Basic identity registration (required for user_<id> targeting)
   socket.on("register", (userId) => {
     if (!userId) return;
     clients.set(userId, socket.id);
@@ -86,12 +90,20 @@ io.on("connection", (socket) => {
     if (provider_id) safeJoin(socket, `provider_${provider_id}`);
   });
 
+  // ✅ Subscribe broker to their own user_<id> room
+  // Payload: { broker_id }
+  socket.on("subscribe_broker", ({ broker_id }) => {
+    if (!broker_id) return;
+    safeJoin(socket, `user_${broker_id}`);
+    console.log(`✅ Broker ${broker_id} subscribed to user_${broker_id}`);
+  });
+
   // Customer creates a booking: notify provider
   // Payload: booking object with provider_id (and ideally booking_id, customer_id)
   socket.on("new_booking_request", (booking) => {
     const providerId = booking?.provider_id;
     if (!providerId) return;
-    io.to(`user_${providerId}`).emit("new_booking", booking);
+    io.to(`user_${providerId}`).emit("new_booking", { booking });
     console.log(`📨 Notified provider_${providerId} of new booking${booking?.id ? ` #${booking.id}` : ''}`);
   });
 
@@ -99,14 +111,19 @@ io.on("connection", (socket) => {
   // Payload: { booking_id, provider_id, customer_id, status: 'accepted'|'rejected' }
   socket.on("booking_response", ({ booking_id, provider_id, customer_id, status }) => {
     if (!booking_id || !provider_id || !status) return;
+    const payload = { booking_id, provider_id, status };
+
     // Notify booking subscribers
-    io.to(`booking_${booking_id}`).emit("booking_status_update", { booking_id, provider_id, status });
+    io.to(`booking_${booking_id}`).emit("booking_status_update", payload);
+
     // Notify customer (if known)
     if (customer_id) {
-      io.to(`user_${customer_id}`).emit("booking_status_update", { booking_id, provider_id, status });
+      io.to(`user_${customer_id}`).emit("booking_status_update", payload);
     }
+
     // Also notify provider room (for multi-device consistency)
-    io.to(`provider_${provider_id}`).emit("booking_status_update", { booking_id, provider_id, status });
+    io.to(`provider_${provider_id}`).emit("booking_status_update", payload);
+
     console.log(`⚙️ Booking ${booking_id} ${status} by provider ${provider_id}`);
   });
 
@@ -114,21 +131,26 @@ io.on("connection", (socket) => {
   // Payload: { booking_id, provider_id, customer_id }
   socket.on("booking_completed", ({ booking_id, provider_id, customer_id }) => {
     if (!booking_id || !provider_id) return;
-    io.to(`booking_${booking_id}`).emit("booking_completed", { booking_id, provider_id });
+    const payload = { booking_id, provider_id };
+
+    io.to(`booking_${booking_id}`).emit("booking_completed", payload);
     if (customer_id) {
-      io.to(`user_${customer_id}`).emit("booking_completed", { booking_id, provider_id });
+      io.to(`user_${customer_id}`).emit("booking_completed", payload);
     }
-    io.to(`provider_${provider_id}`).emit("booking_completed", { booking_id, provider_id });
+    io.to(`provider_${provider_id}`).emit("booking_completed", payload);
+
     console.log(`✅ Booking ${booking_id} completed by provider ${provider_id}`);
   });
 
   // Unified provider location updates
   // Payload: { provider_id, lat, lng, name?, booking_id? }
   socket.on("update_location", ({ provider_id, lat, lng, name, booking_id }) => {
-    if (!provider_id || typeof lat !== 'number' || typeof lng !== 'number') return;
+    if (!provider_id || typeof lat !== "number" || typeof lng !== "number") return;
     const payload = { provider_id, lat, lng, name: name || null, booking_id: booking_id || null };
+
     // Emit to provider room subscribers (customers tracking the provider)
     io.to(`provider_${provider_id}`).emit("provider_location_update", payload);
+
     // If tied to a booking, emit to booking room
     if (booking_id) {
       io.to(`booking_${booking_id}`).emit("provider_location_update", payload);
@@ -146,7 +168,6 @@ io.on("connection", (socket) => {
       name: data.name || null,
       booking_id: data.booking_id || null
     };
-    // Use unified event
     io.to(`provider_${providerId}`).emit("provider_location_update", payload);
     if (payload.booking_id) {
       io.to(`booking_${payload.booking_id}`).emit("provider_location_update", payload);

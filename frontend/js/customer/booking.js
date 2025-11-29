@@ -739,7 +739,7 @@ export async function startRouteTracking(booking) {
         });
 
         step++;
-      }, 10);
+      }, 1000);
     }
 
     // --- Attach manual stop button ---

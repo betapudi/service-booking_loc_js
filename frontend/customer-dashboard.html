@@ -7,6 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- <link rel="stylesheet" href="css/main.css" /> -->
   <link rel="stylesheet" href="css/customer.css" />
+
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
@@ -15,32 +16,31 @@
 <body>
   <header>
     <div class="brand">
-      <img src="assets/icons/logo.svg" class="brand-icon" alt="WorkConnect" />
-      <span class="brand-name">WorkConnect</span>
+      <img src="assets/icons/WC_logo.png" class="brand-icon" alt="WorkConnect" />
+      <!-- <span class="brand-name">WorkConnect</span> -->
     </div>
 
-    <div class="actions">
+    <button class="hamburger" aria-label="Menu">☰</button>
+
+    <nav class="actions">
       <button id="notifyBtn" class="icon-btn" aria-label="Notifications">
         🔔
         <span class="badge" id="notificationCount">3</span>
       </button>
+
       <div id="notificationDropdown" class="notification-dropdown">
         <div class="notification-header">
           <span>Notifications</span>
           <button id="clearNotifications"
             style="background:none;border:none;color:white;font-size:0.9rem;cursor:pointer;">Clear</button>
         </div>
-        <div class="notification-list" id="notificationList">
-          <!-- Notifications dynamically inserted here -->
-        </div>
+        <div class="notification-list" id="notificationList"></div>
       </div>
 
       <img src="assets/icons/user-avatar.svg" class="profile-avatar" alt="User avatar" width="34" height="34" />
-      <button id="logoutBtn" class="logout-btn" aria-label="Logout">🚪 Logout</button>
-    </div>
+      <button id="logoutBtn" class="logout-btn" aria-label="Logout">🚪</button>
+    </nav>
   </header>
-
-
 
   <nav class="breadcrumb">
     <ul>
@@ -202,7 +202,15 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/polyline@1.1.1/index.js"></script>
   <script type="module" src="js/customer/customer.js"></script>
-  
+  <script>
+    // ✅ Hamburger Menu Toggle
+    const hamburger = document.querySelector('.hamburger');
+    const actions = document.querySelector('.actions');
+
+    hamburger.addEventListener('click', () => {
+      actions.style.display = actions.style.display === 'flex' ? 'none' : 'flex';
+    });
+  </script>
   <div id="overlay" class="overlay"></div>
 </body>
 

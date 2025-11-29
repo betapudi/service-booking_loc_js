@@ -1,14 +1,12 @@
 // Provider/dashboard.js
 import { apiCall } from "../shared/api.js";
-import { showToast, switchTab } from "../shared/ui.js";
+import { showToast } from "../shared/ui.js";
 import { setupSocket, getSocket } from "../shared/socket.js";
 import { initMap, addMarker, centerMap, mapInstance } from "../shared/map.js";
 import { loadProviderBookings, loadProviderHistory, loadProviderStats, renderActiveBookings } from "./booking.js";
 import { updateProviderLocation } from "./location.js";
 import { initializeProfileManager } from "../shared/profile-completion.js";
 
-// If you import renderBookingList from booking.js, remove the local one below.
-// Here we keep local renderers to ensure both tabs update together.
 let currentUser = null;
 let customerMarkers = [];
 let routeLayer = null;
@@ -33,34 +31,43 @@ export async function initProviderDashboard() {
     setupNotificationHandlers();
     setupEventListeners();
 
-    // Socket listeners with standardized booking events
     const socket = setupSocket(user.id, token, {
-      booking_created: (booking) => {
-        showToast(`📋 New booking #${booking.id} from ${booking.customer_name}`, "info");
-        renderIncomingBookingNotification(booking);
+      // New incoming bookings (individual or group) for this provider
+      new_booking: ({ booking }) => {
+        const b = booking || {};
+        if (b.provider_id !== currentUser.id) return;
+
+        showToast(`📋 New booking #${b.id} from ${b.customer_name}`, "info");
+        renderIncomingBookingNotification(b);
         refreshAllLists();
       },
-      booking_status_update: async () => {
+
+      // Any booking status update relevant to this provider
+      booking_status_update: async (data) => {
         await refreshAllLists();
       },
-      booking_completed: async () => {
+
+      // Completion event for bookings involving this provider
+      booking_completed: async (data) => {
         await refreshAllLists();
       }
     });
 
-    // Subscribe provider to their rooms
+    // Register and subscribe
+    socket.emit("register", user.id);
     socket.emit("subscribe_provider", { provider_id: user.id });
     socket.emit("subscribe_booking", { provider_id: user.id });
 
     // Broadcast live location
-    navigator.geolocation.watchPosition((pos) => {
-      socket.emit("provider_location_update", {
-        provider_id: user.id,
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition((pos) => {
+        socket.emit("update_location", {
+          provider_id: user.id,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        });
       });
-    });
+    }
 
     await updateProviderLocation(user.id);
     await refreshAllLists();
@@ -72,7 +79,6 @@ export async function initProviderDashboard() {
 }
 
 function setupTabHandlers() {
-  // If your HTML uses .bottom-btn with data-card, adapt to switchTab usage
   document.querySelectorAll(".bottom-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".bottom-btn").forEach(b => b.classList.remove("active"));
@@ -158,7 +164,6 @@ function renderIncomingBookingNotification(booking) {
   `;
   list.prepend(item);
 
-  // increment badge
   const currentCount = parseInt(countEl.textContent || "0", 10);
   countEl.textContent = String(currentCount + 1);
 
@@ -168,7 +173,12 @@ function renderIncomingBookingNotification(booking) {
   if (booking.provider_latitude && booking.provider_longitude) {
     addMarker(booking.provider_latitude, booking.provider_longitude, "You (Provider)", "🔧");
   }
-  if (booking.customer_latitude && booking.customer_longitude && booking.provider_latitude && booking.provider_longitude) {
+  if (
+    booking.customer_latitude &&
+    booking.customer_longitude &&
+    booking.provider_latitude &&
+    booking.provider_longitude
+  ) {
     const bounds = L.latLngBounds([
       [booking.customer_latitude, booking.customer_longitude],
       [booking.provider_latitude, booking.provider_longitude]
@@ -190,14 +200,12 @@ function removeNotificationForBooking(bookingId) {
 }
 
 async function refreshAllLists() {
-  // loadProviderBookings returns and renders incoming requests via booking.js renderers.
   const res = await apiCall("/bookings/history");
   const bookings = (res.bookings || []).filter(
-    // b => b.provider_id === currentUser.id && ["PENDING", "ACCEPTED", "IN_PROGRESS"].includes(b.status)
     b => b.provider_id === currentUser.id
   );
 
-  // Requests tab
+  // Requests tab: pending bookings
   renderBookingList(bookings);
 
   // Active tab
@@ -206,12 +214,12 @@ async function refreshAllLists() {
   // History tab
   await loadProviderHistory(currentUser.id);
 
-  // 🔑 NEW: also update notification bell for pending requests
+  // Notification bell: pending only
   const pending = bookings.filter(b => b.status === "PENDING");
   const list = document.getElementById("notificationList");
   const countEl = document.getElementById("notificationCount");
   if (list && countEl) {
-    list.innerHTML = ""; // clear old
+    list.innerHTML = "";
     pending.forEach(b => renderIncomingBookingNotification(b));
     countEl.textContent = String(pending.length);
   }
@@ -219,15 +227,13 @@ async function refreshAllLists() {
 
 async function updateBookingStatus(bookingId, status, isGroupCompletion = false) {
   try {
-    const endpoint = isGroupCompletion ? `/bookings/${bookingId}/group-complete` : `/bookings/${bookingId}/status`;
+    const endpoint = isGroupCompletion
+      ? `/bookings/${bookingId}/group-complete`
+      : `/bookings/${bookingId}/status`;
     const res = await apiCall(endpoint, { method: "POST", body: { status } });
 
     showToast(`Booking ${status.toLowerCase()} successfully`, "success");
     await refreshAllLists();
-
-    if (res.status === "ACCEPTED" && res.provider_location && res.customer_location) {
-      drawAssignedRoute(res.provider_location, res.customer_location);
-    }
     return res;
   } catch (err) {
     console.error("Status update failed:", err);
@@ -251,7 +257,6 @@ async function acceptBooking(bookingId) {
     console.error("Failed to accept booking:", error);
   }
 }
-
 
 async function rejectBooking(bookingId) {
   try {
@@ -347,35 +352,39 @@ export function renderBookingList(bookings) {
   const container = document.getElementById("requests-container");
   if (!container) return;
 
-  container.innerHTML = bookings
-    .filter(b => b.status === "PENDING")   // 🔑 only show pending requests
-    .map(b => {
-      let actions = "";
-      const isGroupBooking = b.group_id || b.is_group_booking;
-
-      actions = `
-      <button class="accept-btn" data-id="${b.id}">✅ Accept</button>
-      <button class="reject-btn" data-id="${b.id}">❌ Reject</button>
-    `;
-
-      return `
-      <div class="booking-card ${isGroupBooking ? 'group-booking' : 'individual-booking'}">
+  container.innerHTML =
+    bookings
+      .filter(b => b.status === "PENDING")
+      .map(b => {
+        const isGroupBooking = b.group_id || b.is_group_booking;
+        return `
+      <div class="booking-card ${isGroupBooking ? "group-booking" : "individual-booking"}">
         <div class="booking-header">
           <strong>Booking #${b.id}</strong>
-          ${isGroupBooking ? '<span class="group-badge">👥 Group</span>' : '<span class="individual-badge">👤 Individual</span>'}
+          ${
+            isGroupBooking
+              ? '<span class="group-badge">👥 Group</span>'
+              : '<span class="individual-badge">👤 Individual</span>'
+          }
         </div>
         <div class="booking-details">
           Status: <span class="status-${b.status.toLowerCase()}">${b.status}</span><br/>
-          ${isGroupBooking ? `Group ID: ${b.group_id}<br/>` : ''}
+          ${isGroupBooking ? `Group ID: ${b.group_id}<br/>` : ""}
           Customer: ${b.customer_name} (${b.customer_mobile})<br/>
-          ${isGroupBooking && b.provider_count > 1 ? `Team: ${b.provider_count} providers<br/>` : ''}
+          ${
+            isGroupBooking && b.provider_count > 1
+              ? `Team: ${b.provider_count} providers<br/>`
+              : ""
+          }
         </div>
         <div class="booking-actions">
-          ${actions}
+          <button class="accept-btn" data-id="${b.id}">✅ Accept</button>
+          <button class="reject-btn" data-id="${b.id}">❌ Reject</button>
         </div>
       </div>
     `;
-    }).join("") || `<p class="no-bookings">No incoming requests</p>`;
+      })
+      .join("") || `<p class="no-bookings">No incoming requests</p>`;
 }
 
 async function fetchBookingDetails(bookingId) {
@@ -392,25 +401,6 @@ function clearRoute() {
   if (routeLayer) {
     mapInstance.removeLayer(routeLayer);
     routeLayer = null;
-  }
-}
-
-async function drawAssignedRoute(providerCoords, customerCoords) {
-  try {
-    const from = `${providerCoords.lng},${providerCoords.lat}`;
-    const to = `${customerCoords.lng},${customerCoords.lat}`;
-
-    const res = await fetch(`/api/route?from=${from}&to=${to}`);
-    const data = await res.json();
-
-    if (data.routes && data.routes[0]) {
-      clearRoute(); // Clear existing route
-      routeLayer = L.geoJSON(data.routes[0].geometry, {
-        style: { color: 'green', weight: 4 }
-      }).addTo(mapInstance);
-    }
-  } catch (error) {
-    console.error("Failed to draw route:", error);
   }
 }
 

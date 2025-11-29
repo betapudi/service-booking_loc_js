@@ -184,3 +184,4 @@ document.addEventListener('click', (e) => {
 });
 
 renderNotifications();
+

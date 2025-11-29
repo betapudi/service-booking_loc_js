@@ -1,11 +1,12 @@
 // Broker/dashboard.js
 import { apiCall } from "../shared/api.js";
-import { showToast, switchTab } from "../shared/ui.js";
+import { showToast } from "../shared/ui.js";
 import { setupSocket } from "../shared/socket.js";
 import { loadGroupRequests } from "./requests.js";
 import { loadBrokerProviders } from "./providers.js";
 import { loadGroupBookings } from "./bookings.js";
 
+let currentUser = null;
 
 export async function initBrokerDashboard() {
   const user = JSON.parse(localStorage.getItem("user"));
@@ -17,40 +18,57 @@ export async function initBrokerDashboard() {
     return;
   }
 
-  document.querySelector(".brand").textContent = `WorkConnect — Broker Dashboard`;
-  setupTabHandlers();
+  currentUser = user;
+  document.getElementById("userName").textContent = user.name || "Customer";
+  // document.querySelector(".brand").textContent = `WorkConnect — Broker Dashboard`;
+  setupCollapsibleHandlers();
 
-  // ✅ Socket listeners
   const socket = setupSocket(user.id, token, {
-    group_request_created: (req) => {
-      showToast(`📨 New group request #${req.id} from ${req.customer_name}`, "info");
-      renderIncomingGroupRequest(req);
-      loadGroupRequests(user.id);
+    // New group request directed to this broker
+    new_group_request: ({ booking }) => {
+      if (booking?.broker_id === user.id) {
+        showToast(`📨 New group request from ${booking.customer_name}`, "info");
+        loadGroupRequests(user.id);
+      }
     },
-    group_request_update: (data) => {
-      showToast(`🔄 Group request #${data.group_request_id} updated: ${data.status}`, "info");
+
+    // Group request lifecycle updates
+    group_request_accepted: (data) => {
+      if (data.broker_id && data.broker_id !== user.id) return;
+      showToast(`✅ Group request #${data.request_id} accepted`, "success");
       loadGroupRequests(user.id);
       loadGroupBookings(user.id);
     },
+
+    group_request_cancelled: (data) => {
+      if (data.broker_id && data.broker_id !== user.id) return;
+      showToast(`❌ Group request #${data.request_id} cancelled`, "warning");
+      loadGroupRequests(user.id);
+      loadGroupBookings(user.id);
+    },
+
+    // Broker-owned provider lifecycle
     user_registered: (u) => {
       if (u.role === "provider" && u.registered_by_broker === user.id) {
         showToast(`✅ Provider registered: ${u.name}`, "success");
         loadBrokerProviders(user.id);
       }
     },
+
     user_verified: (u) => {
       if (u.role === "provider" && u.verified_by_broker === user.id) {
         showToast(`✅ Provider verified: ${u.mobile_number}`, "info");
         loadBrokerProviders(user.id);
       }
     },
+
+    // Group bookings progress
     booking_status_update: () => loadGroupBookings(user.id),
     booking_completed: () => loadGroupBookings(user.id)
   });
 
-  // ✅ After connecting, subscribe broker to their rooms
-  socket.emit("subscribe_provider", { broker_id: user.id });
-  socket.emit("subscribe_booking", { broker_id: user.id });
+  socket.emit("register", user.id);
+  socket.emit("subscribe_broker", { broker_id: user.id });
 
   await loadGroupRequests(user.id);
   await loadBrokerProviders(user.id);
@@ -59,7 +77,7 @@ export async function initBrokerDashboard() {
   await loadStates();
 }
 
-function setupTabHandlers() {
+function setupCollapsibleHandlers() {
   document.querySelectorAll(".collapsible-header").forEach(header => {
     header.addEventListener("click", () => {
       const section = header.parentElement;
@@ -69,134 +87,56 @@ function setupTabHandlers() {
     });
   });
 }
-// ✅ Render incoming group request card
-function renderIncomingGroupRequest(request) {
-  const container = document.getElementById("customerRequests");
-  if (!container) return;
 
-  const card = document.createElement("div");
-  card.className = "group-request-card";
-  card.innerHTML = `
-    <strong>Group Request #${request.id}</strong><br/>
-    Skill: ${request.skill_name}<br/>
-    Providers Needed: ${request.provider_count}<br/>
-    Customer: ${request.customer_name} (${request.customer_mobile})<br/>
-    Status: ${request.status}<br/>
-    <button class="assign-btn" data-id="${request.id}">✅ Assign Providers</button>
-    <button class="cancel-btn" data-id="${request.id}">❌ Cancel Request</button>
-  `;
-  container.prepend(card);
+// The direct REST actions to assign/cancel group requests remain unchanged,
+// but we remove emitGroupUpdate since the backend itself emits the socket events.
 
-  // Attach event listeners
-  card.querySelector(".assign-btn").addEventListener("click", () => {
-    assignProvidersToGroup(request.id);
-  });
-  card.querySelector(".cancel-btn").addEventListener("click", () => {
-    cancelGroupRequest(request.id);
-  });
-}
-
-// ✅ Broker actions
-async function assignProvidersToGroup(groupRequestId) {
-  try {
-    const res = await apiCall(`/brokers/group-requests/${groupRequestId}/assign`, { method: "POST" });
-    if (res.success) {
-      showToast("✅ Providers assigned to group request", "success");
-      loadGroupRequests();
-      emitGroupUpdate(groupRequestId, "ASSIGNED");
-    }
-  } catch (err) {
-    console.error("Failed to assign providers:", err);
-    showToast("❌ Failed to assign providers", "error");
-  }
-}
-
-async function cancelGroupRequest(groupRequestId) {
-  try {
-    const res = await apiCall(`/brokers/group-requests/${groupRequestId}/cancel`, { method: "POST" });
-    if (res.success) {
-      showToast("✅ Group request cancelled", "success");
-      loadGroupRequests();
-      emitGroupUpdate(groupRequestId, "CANCELLED");
-    }
-  } catch (err) {
-    console.error("Failed to cancel group request:", err);
-    showToast("❌ Failed to cancel group request", "error");
-  }
-}
-// ✅ Emit updates back to customers
-function emitGroupUpdate(groupRequestId, status) {
-  const socket = getSocket();
-  if (!socket) return;
-  socket.emit("group_request_update", {
-    group_request_id: groupRequestId,
-    broker_id: JSON.parse(localStorage.getItem("user")).id,
-    status
-  });
-}
-
-document.getElementById("registerProviderForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  const formData = {
-    name: form.name.value,
-    mobile_number: form.mobile_number.value,
-    location_id: parseInt(form.location_id.value),
-    skills: Array.from(form.querySelectorAll("input[name='skill']:checked")).map(i => parseInt(i.value))
-  };
-
-  try {
-    const res = await apiCall("/brokers/register-provider", {
-      method: "POST",
-      body: formData
-    });
-
-    showToast("✅ Provider registered. OTP sent.", "success");
-    form.reset();
-    await loadBrokerProviders();
-  } catch (err) {
-    console.error("Registration failed:", err);
-    showToast("❌ Failed to register provider.", "error");
-  }
-});
 async function loadSkillOptions() {
   const res = await apiCall("/profile/skills");
   const skills = res.skills || [];
   const container = document.getElementById("skillCheckboxes");
 
-  container.innerHTML = skills.map(s => `
+  container.innerHTML = skills
+    .map(
+      s => `
     <label>
       <input type="checkbox" name="skill" value="${s.id}" />
       ${s.name}
     </label>
-  `).join("");
+  `
+    )
+    .join("");
 }
 
 async function loadStates() {
   const res = await apiCall("/location/states");
   const stateSelect = document.getElementById("stateSelect");
-  stateSelect.innerHTML = `<option value="">Select State</option>` +
+  stateSelect.innerHTML =
+    `<option value="">Select State</option>` +
     res.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
 }
 
 async function loadDistricts(stateId) {
   const res = await apiCall(`/location/districts/${stateId}`);
   const districtSelect = document.getElementById("districtSelect");
-  districtSelect.innerHTML = `<option value="">Select District</option>` +
+  districtSelect.innerHTML =
+    `<option value="">Select District</option>` +
     res.map(d => `<option value="${d.id}">${d.name}</option>`).join("");
 }
 
 async function loadTaluks(districtId) {
   const res = await apiCall(`/location/taluks/${districtId}`);
   const talukSelect = document.getElementById("talukSelect");
-  talukSelect.innerHTML = `<option value="">Select Taluk</option>` +
+  talukSelect.innerHTML =
+    `<option value="">Select Taluk</option>` +
     res.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
 }
 
 async function loadVillages(talukId) {
   const res = await apiCall(`/location/villages/${talukId}`);
   const villageSelect = document.getElementById("locationSelect");
-  villageSelect.innerHTML = `<option value="">Select Village</option>` +
+  villageSelect.innerHTML =
+    `<option value="">Select Village</option>` +
     res.map(v => `<option value="${v.id}">${v.name}</option>`).join("");
 }
 
@@ -217,3 +157,4 @@ document.getElementById("talukSelect").addEventListener("change", e => {
   loadVillages(e.target.value);
   document.getElementById("locationSelect").innerHTML = `<option value="">Select Village</option>`;
 });
+

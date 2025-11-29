@@ -3,7 +3,7 @@ export function showToast(message, type = "info", duration = 3000) {
   if (typeof Swal !== "undefined") {
     Swal.fire({
       toast: true,
-      position: "top-end",
+      position: "bottom-bar",
       icon: type,
       title: message,
       showConfirmButton: false,

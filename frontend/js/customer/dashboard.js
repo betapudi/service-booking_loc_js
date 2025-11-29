@@ -1,15 +1,24 @@
 // customer/dashboard.js
-import { apiCall } from "../shared/api.js";
+
 import { initMap } from "../shared/map.js";
 import { showToast, switchTab } from "../shared/ui.js";
 import { loadCustomerBookings, startRouteTracking } from "./booking.js";
 import {
-  loadSkillsForGroupBooking, loadActiveGroupRequests, setupGroupRequestForm,
-  setupLocationDropdowns, loadAvailableBrokers
+  loadSkillsForGroupBooking,
+  loadActiveGroupRequests,
+  setupGroupRequestForm,
+  setupLocationDropdowns,
+  loadAvailableBrokers,
+  populateGroupLocationFromUser
 } from "./groupRequest.js";
 import { loadUserLocation } from "./providers.js";
 import { setupSocket } from "../shared/socket.js";
-import { loadLocationDropdown, populateGroupLocationFromUser } from "./groupRequest.js";
+
+let currentUser = null;
+
+// Keep a dictionary of provider markers so we can update them efficiently
+const providerMarkers = {};
+window.providerMarkers = providerMarkers;
 
 export async function initCustomerDashboard() {
   const user = JSON.parse(localStorage.getItem("user"));
@@ -21,85 +30,82 @@ export async function initCustomerDashboard() {
     return;
   }
 
+  currentUser = user;
   document.getElementById("userName").textContent = user.name || "Customer";
 
   initMap("mapdiv", 17.385, 78.4867, 13);
   loadUserLocation();
   setupTabHandlers();
+
   const socket = setupSocket(user.id, token, {
+    // Booking lifecycle updates
     booking_status_update: (data) => {
-      const booking = data.booking || data;
-      // handle status changes (accepted, in_progress, completed, cancelled)
-      showToast(`Booking #${booking.id} updated: ${booking.status}`, "info");
+      const bookingId = data.booking_id || data.id;
+      const status = data.status || data.booking?.status;
+
+      const messages = {
+        PENDING: `⌛ Booking #${bookingId} is pending acceptance`,
+        ACCEPTED: `✅ Booking #${bookingId} accepted`,
+        IN_PROGRESS: `🛠️ Booking #${bookingId} is now in progress`,
+        REJECTED: `❌ Booking #${bookingId} was rejected`,
+        COMPLETED: `✅ Booking #${bookingId} marked as completed`,
+        CANCELLED: `❌ Booking #${bookingId} was cancelled`
+      };
+
+      showToast(messages[status] || `Booking #${bookingId} updated: ${status}`, "info");
+
+      loadCustomerBookings(user.id, (b) => {
+        if (b.status === "ACCEPTED" || b.status === "IN_PROGRESS") {
+          startRouteTracking(b);
+        }
+      });
+    },
+
+    booking_completed: (data) => {
+      const bookingId = data.booking_id || data.id;
+      showToast(`✅ Booking #${bookingId} completed`, "success");
+      if (typeof window.stopRouteTracking === "function") {
+        window.stopRouteTracking();
+      }
       loadCustomerBookings(user.id);
     },
-    booking_created: (booking) => {
-      showToast(`📋 New booking #${booking.id} created`, "success");
-      loadCustomerBookings(user.id);
-    },
+
+    // Live provider location updates while tracking
     provider_location_update: (loc) => {
       updateProviderMarker(loc);
     },
-    group_request_update: (data) => {
-      showToast(`🔄 Group request #${data.group_request_id} updated: ${data.status}`, "info");
+
+    // Group request lifecycle — Option 1: customer sees all events
+    new_group_request: ({ booking }) => {
+      if (booking?.customer_id === user.id) {
+        showToast(`📨 Group booking #${booking.id} created`, "success");
+        loadActiveGroupRequests();
+        loadCustomerBookings(user.id);
+      }
+    },
+
+    group_request_accepted: (data) => {
+      const { request_id, broker_name, booking_count } = data;
+      showToast(
+        `✅ Your group request #${request_id} was accepted by ${broker_name} with ${booking_count} bookings`,
+        "success"
+      );
+      loadActiveGroupRequests();
+      loadCustomerBookings(user.id);
+    },
+
+    group_request_cancelled: (data) => {
+      showToast(`❌ Your group request #${data.request_id} was cancelled`, "error");
       loadActiveGroupRequests();
     }
   });
 
-  // Subscribe to customer-specific rooms
+  // Register this user and subscribe to relevant rooms
+  socket.emit("register", user.id);
   socket.emit("subscribe_booking", { customer_id: user.id });
   socket.emit("subscribe_provider", { customer_id: user.id });
 
-  // ✅ Socket listeners
-  // setupSocket(user.id, token, {
-  //   booking_status_update: (data) => {
-  //     const booking = data.booking || data;
-  //     const status = booking.status;
-
-  //     if (status === "ACCEPTED" || status === "IN_PROGRESS") {
-  //       if (booking.provider_latitude && booking.customer_latitude) {
-  //         startRouteTracking(booking);
-  //       } else {
-  //         showToast(`Booking #${booking.id} accepted. Location data missing for tracking.`, "warning");
-  //       }
-  //     } else if (["COMPLETED", "CANCELLED", "REJECTED"].includes(status)) {
-  //       if (typeof window.stopRouteTracking === "function") {
-  //         window.stopRouteTracking();
-  //       }
-  //     }
-
-  //     const messages = {
-  //       PENDING: `⌛ Booking #${booking.id} is pending acceptance`,
-  //       ACCEPTED: `✅ Booking #${booking.id} accepted by ${booking.provider_name}. Tracking started!`,
-  //       IN_PROGRESS: `🛠️ Booking #${booking.id} is now in progress!`,
-  //       REJECTED: `❌ Booking #${booking.id} rejected by ${booking.provider_name}`,
-  //       COMPLETED: `✅ Booking #${booking.id} marked as completed`,
-  //       CANCELLED: `❌ Booking #${booking.id} was cancelled`
-  //     };
-
-  //     showToast(messages[status] || `Booking #${booking.id} updated`, "info");
-  //     loadCustomerBookings(user.id, (b) => {
-  //       if (b.status === "ACCEPTED" || b.status === "IN_PROGRESS") {
-  //         startRouteTracking(b);
-  //       }
-  //     });
-  //   },
-
-  //   new_booking: () => loadCustomerBookings(user.id),
-
-  //   // ✅ NEW: listen globally for broker updates on group requests
-  //   group_request_update: (data) => {
-  //     const { group_request_id, status } = data;
-  //     showToast(`🔄 Group request #${group_request_id} updated by broker: ${status}`, "info");
-  //     loadActiveGroupRequests();
-  //   }
-  // });
-
-  // ✅ After connecting, subscribe to customer-specific rooms
-  // socket.emit("subscribe_booking", { customer_id: user.id });
-  // socket.emit("subscribe_provider", { customer_id: user.id });
-
-  // Make these functions available globally
+  // Expose for other modules if needed
   window.loadActiveGroupRequests = loadActiveGroupRequests;
   window.loadCustomerBookings = loadCustomerBookings;
 
@@ -133,8 +139,6 @@ function setupTabHandlers() {
     });
   });
 }
-// Keep a dictionary of provider markers so we can update them efficiently
-const providerMarkers = {};
 
 export function updateProviderMarker({ provider_id, lat, lng, name, booking_id }) {
   if (!window.map) {
@@ -142,43 +146,31 @@ export function updateProviderMarker({ provider_id, lat, lng, name, booking_id }
     return;
   }
 
-  // If marker already exists, just move it
   if (providerMarkers[provider_id]) {
     providerMarkers[provider_id].setLatLng([lat, lng]);
   } else {
-    // Create a new marker for this provider
     const marker = L.marker([lat, lng], {
       title: name || `Provider ${provider_id}`,
       icon: L.icon({
-        iconUrl: "assets/icons/provider-marker.png", // replace with your icon path
+        iconUrl: "assets/icons/provider-marker.png",
         iconSize: [32, 32],
         iconAnchor: [16, 32],
-        popupAnchor: [0, -32],
-      }),
+        popupAnchor: [0, -32]
+      })
     }).addTo(window.map);
 
     marker.bindPopup(
-      `<strong>${name || "Provider"}</strong><br>ID: ${provider_id}${booking_id ? `<br>Booking #${booking_id}` : ""
+      `<strong>${name || "Provider"}</strong><br>ID: ${provider_id}${
+        booking_id ? `<br>Booking #${booking_id}` : ""
       }`
     );
 
     providerMarkers[provider_id] = marker;
   }
 
-  // Optionally pan/zoom to provider
-  // window.map.setView([lat, lng], 15);
-
   console.log(`📍 Updated provider ${provider_id} marker at [${lat}, ${lng}]`);
 }
 
-// Dictionary of provider markers (shared with updateProviderMarker)
-
-window.providerMarkers = providerMarkers;
-
-/**
- * Remove a provider's marker from the map.
- * @param {string|number} provider_id - The provider's unique ID
- */
 export function stopProviderMarker(provider_id) {
   if (!window.map) {
     console.warn("Map not initialized yet");
@@ -195,7 +187,11 @@ export function stopProviderMarker(provider_id) {
   }
 }
 
+// Initialize map when DOM is ready (safely, but main init still in initCustomerDashboard)
 document.addEventListener("DOMContentLoaded", () => {
-  initMap("mapdiv", 17.385, 78.4867, 13);
-  loadUserLocation();
+  if (!window.map) {
+    initMap("mapdiv", 17.385, 78.4867, 13);
+    loadUserLocation();
+  }
 });
+

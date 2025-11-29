@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 
@@ -5,145 +6,212 @@
   <meta charset="UTF-8" />
   <title>Login - WorkConnect</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- Styles -->
-  <link rel="stylesheet" href="css/main.css" />
-
-  <!-- SweetAlert2 -->
+  <!-- <link rel="stylesheet" href="css/main.css" /> -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
   <style>
-    /* ===== PAGE LAYOUT ===== */
-    body {
-      margin: 0;
-      font-family: "Inter", sans-serif;
-      background: #f3f4f6;
-      color: #333;
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
+    :root {
+      --primary-gradient: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      --primary-hover: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+      --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.1);
+      --radius-sm: 0.375rem;
+      --radius-md: 0.5rem;
+      --radius-lg: 0.75rem;
+      --radius-xl: 1rem;
+      --transition: all 0.2s ease;
+      --transition-slow: all 0.3s ease;
     }
 
-    /* ===== HEADER (MATCH DASHBOARD STYLE) ===== */
+    body {
+      margin: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #f9fafb;
+      color: #1f2937;
+      line-height: 1.5;
+    }
+
+    /* Optional layout container from main.css */
+    .main-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+
+    /* =============== HEADER STYLES =============== */
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 0.75rem 1.25rem;
-      background: linear-gradient(90deg, #2563eb, #1d4ed8);
+      background: var(--primary-gradient);
       color: white;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 4px 20px rgba(37, 99, 235, 0.15);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      backdrop-filter: blur(10px);
+      padding: 0.875rem 1.25rem;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 0.6rem;
-      font-size: 1.4rem;
+      gap: 0.75rem;
+      font-size: 1.3rem;
       font-weight: 600;
     }
 
-    .brand img {
-      width: 40px;
-      height: 40px;
+    .brand-icon {
+      width: 100px;
+      height: 60px;
+      object-fit: contain;
+      filter: none;
+      /* ensure original logo colors */
     }
 
-    /* ===== LOGIN CARD ===== */
+    .brand-name {
+      letter-spacing: 0.5px;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      white-space: nowrap;
+    }
+
+
     .login-wrapper {
       flex: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 2rem;
+      padding: 2rem 1rem;
     }
 
     .login-card {
       background: #fff;
-      border-radius: 1rem;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg);
       padding: 2.5rem 2rem;
       width: 100%;
-      max-width: 380px;
+      max-width: 420px;
       text-align: center;
-      animation: fadeIn 0.4s ease;
+      animation: fadeInUp 0.5s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .login-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: var(--primary-gradient);
     }
 
     .login-card img.logo {
-      width: 70px;
-      height: 70px;
-      margin-bottom: 0.5rem;
+      width: 80px;
+      height: 80px;
+      margin-bottom: 1rem;
     }
 
     .login-card h1 {
-      margin: 0;
-      font-size: 1.8rem;
-      color: #1d4ed8;
+      margin: 0 0 0.5rem 0;
+      font-size: 1.875rem;
+      font-weight: 700;
+      color: #1e293b;
+      letter-spacing: -0.025em;
     }
 
     .login-card p.subtitle {
-      color: #666;
-      font-size: 0.95rem;
+      color: #64748b;
+      font-size: 1rem;
       margin-bottom: 2rem;
+      line-height: 1.6;
     }
 
-    /* ===== FORM INPUTS ===== */
     .input {
       width: 100%;
-      padding: 0.8rem;
-      margin-bottom: 1rem;
-      border: 1px solid #ddd;
-      border-radius: 0.6rem;
+      padding: 0.875rem 1rem;
+      margin-bottom: 1.25rem;
+      border: 1.5px solid #e2e8f0;
+      border-radius: var(--radius-md);
       font-size: 1rem;
-      transition: border-color 0.2s ease;
+      transition: all 0.2s ease;
+      background: #f8fafc;
     }
 
     .input:focus {
-      border-color: #2563eb;
       outline: none;
+      border-color: #2563eb;
+      background: white;
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      transform: translateY(-1px);
     }
 
-    /* ===== BUTTON ===== */
     .btn {
       width: 100%;
-      padding: 0.9rem;
+      padding: 0.875rem 1.5rem;
       border: none;
-      border-radius: 0.6rem;
+      border-radius: var(--radius-md);
       font-size: 1rem;
       font-weight: 600;
-      background: linear-gradient(90deg, #2563eb, #1d4ed8);
+      background: var(--primary-gradient);
       color: white;
       cursor: pointer;
-      transition: all 0.25s ease;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+      opacity: 0;
+      transition: opacity 0.2s;
     }
 
     .btn:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
     }
 
-    /* ===== FOOTER / ALT LINK ===== */
+    .btn:hover::after {
+      opacity: 1;
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
     .alt {
-      margin-top: 1.5rem;
-      font-size: 0.9rem;
-      color: #555;
+      margin-top: 1.75rem;
+      font-size: 0.95rem;
+      color: #64748b;
     }
 
     .alt a {
       color: #2563eb;
       font-weight: 500;
       text-decoration: none;
+      transition: color 0.2s;
     }
 
     .alt a:hover {
+      color: #1d4ed8;
       text-decoration: underline;
     }
 
-    /* ===== ANIMATION ===== */
-    @keyframes fadeIn {
+    @keyframes fadeInUp {
       from {
         opacity: 0;
-        transform: translateY(15px);
+        transform: translateY(20px);
       }
 
       to {
@@ -152,15 +220,26 @@
       }
     }
 
-    /* ===== RESPONSIVE ===== */
     @media (max-width: 480px) {
       header {
-        flex-direction: column;
-        gap: 0.5rem;
+        padding: 0.875rem 1.25rem;
+      }
+
+      .brand {
+        font-size: 1.25rem;
+      }
+
+      .brand img {
+        width: 36px;
+        height: 36px;
       }
 
       .login-card {
         padding: 2rem 1.5rem;
+      }
+
+      .login-card h1 {
+        font-size: 1.5rem;
       }
     }
   </style>
@@ -169,24 +248,18 @@
 <body>
   <header>
     <div class="brand">
-      <img src="assets/icons/logo.svg" alt="WorkConnect Logo" />
-      <span>WorkConnect</span>
+      <img src="assets/icons/WC_logo.png" class="brand-icon"  alt="WorkConnect Logo" />
+      <!-- <span>WorkConnect</span> -->
     </div>
   </header>
 
   <main class="login-wrapper">
     <div class="login-card">
-      <img src="assets/icons/logo.svg" alt="WorkConnect" class="logo" />
+      <img src="assets/icons/WC_blue_icon.png" alt="WorkConnect" class="logo" />
       <h1>Welcome Back</h1>
       <p class="subtitle">Sign in to continue your journey</p>
 
-      <input
-        type="text"
-        id="mobile"
-        class="input"
-        placeholder="Mobile Number"
-        maxlength="10"
-      />
+      <input type="text" id="mobile" class="input" placeholder="Mobile Number" maxlength="10" />
 
       <select id="role" class="input">
         <option value="customer">Customer</option>
@@ -198,13 +271,12 @@
       <button id="sendOtpBtn" class="btn">Send OTP</button>
 
       <p class="alt">
-        Don’t have an account?
+        Don't have an account?
         <a href="signup.html">Sign up</a>
       </p>
     </div>
   </main>
 
-  <!-- Scripts -->
   <script type="module" src="js/shared/api.js"></script>
   <script type="module" src="js/auth.js"></script>
 </body>

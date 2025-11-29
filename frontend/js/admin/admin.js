@@ -1,3 +1,4 @@
+// frontend/js/admin/admin.js
 import { loadAnalytics } from "./analytics.js";
 import { loadUsers } from "./users.js";
 import { showToast } from "../shared/ui.js";
@@ -24,7 +25,6 @@ document.addEventListener("DOMContentLoaded", () => {
     loadUsers({ role, q });
   });
 
-  // ✅ Socket listeners for live user management
   const socket = setupSocket(user.id, token, {
     user_registered: (u) => {
       showToast(`👤 New ${u.role} registered: ${u.name}`, "info");
@@ -52,10 +52,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Subscribe admin to global booking events
+  socket.emit("register", user.id);
   socket.emit("subscribe_booking", { admin_id: user.id });
 
-  // Initial load
   loadAnalytics();
   loadUsers({});
 });
