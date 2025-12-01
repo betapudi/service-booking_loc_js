@@ -24,7 +24,7 @@ export async function updateProviderLocation(providerId) {
           initMap("mapdiv", latitude, longitude);
         }
 
-        addMarker(latitude, longitude, "You (Provider)", "🔧");
+        addMarker(latitude, longitude, "You (Provider)", "🛠️");
         centerMap(latitude, longitude);
         showToast("Location updated", "success");
       } catch (err) {

@@ -168,10 +168,10 @@ function renderIncomingBookingNotification(booking) {
   countEl.textContent = String(currentCount + 1);
 
   if (booking.customer_latitude && booking.customer_longitude) {
-    addMarker(booking.customer_latitude, booking.customer_longitude, "Customer", "🧍");
+    addMarker(booking.customer_latitude, booking.customer_longitude, "Customer", "👤");
   }
   if (booking.provider_latitude && booking.provider_longitude) {
-    addMarker(booking.provider_latitude, booking.provider_longitude, "You (Provider)", "🔧");
+    addMarker(booking.provider_latitude, booking.provider_longitude, "You (Provider)", "🛠️");
   }
   if (
     booking.customer_latitude &&
@@ -251,7 +251,7 @@ async function acceptBooking(bookingId) {
 
     const booking = await fetchBookingDetails(bookingId);
     if (booking && booking.provider_latitude && booking.provider_longitude) {
-      addMarker(booking.provider_latitude, booking.provider_longitude, "You (Provider)", "🔧");
+      addMarker(booking.provider_latitude, booking.provider_longitude, "You (Provider)", "🛠️");
     }
   } catch (error) {
     console.error("Failed to accept booking:", error);

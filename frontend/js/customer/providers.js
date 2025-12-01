@@ -441,7 +441,7 @@ async function makeBookingRequest(providerId, locationId, providerName, provider
 function addProviderMarkers(providers) {
   providers.forEach(p => {
     if (isValidCoord(p.latitude, p.longitude)) {
-      addMarker(p.latitude, p.longitude, p.name, "🔧");
+      addMarker(p.latitude, p.longitude, p.name, "🛠️");
     }
   });
 }

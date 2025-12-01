@@ -253,6 +253,77 @@ router.get('/available', async (req, res) => {
 });
 
 // Broker: fetch group requests with matching providers
+// router.get('/group-requests', authMiddleware, permit('broker'), async (req, res) => {
+//   try {
+//     const brokerId = req.user.id;
+
+//     const requests = await db.query(`
+//       SELECT 
+//         cr.*,
+//         c.name AS customer_name,
+//         c.mobile_number AS customer_mobile,
+//         s.name AS skill_name,
+//         s.id AS skill_id,
+//         cr.created_at,
+//         loc.lat AS customer_lat,
+//         loc.lng AS customer_lng,
+//         CASE 
+//           WHEN cr.broker_id = $1 THEN 'assigned'
+//           WHEN cr.broker_id IS NULL THEN 'available'
+//           ELSE 'taken'
+//         END AS request_status
+//       FROM customer_requests cr
+//       LEFT JOIN users c ON cr.customer_id = c.id
+//       LEFT JOIN skills s ON cr.skill_id = s.id
+//       WHERE (cr.broker_id = $1 OR cr.broker_id IS NULL)
+//         AND cr.status = 'pending'
+//       ORDER BY 
+//         CASE WHEN cr.broker_id = $1 THEN 0 ELSE 1 END,
+//         cr.created_at DESC
+//     `, [brokerId]);
+
+//     const requestsWithProviders = await Promise.all(
+//       requests.rows.map(async (request) => {
+//         if (!request.skill_id) {
+//           console.warn(`Request ${request.id} missing skill_id`);
+//           return { ...request, matching_providers: [], matching_provider_count: 0 };
+//         }
+
+//         try {
+//           const matchingProviders = await db.query(`
+//             SELECT 
+//               u.id, u.name, u.mobile_number,
+//               COALESCE(
+//                 ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL),
+//                 ARRAY[]::varchar[]
+//               ) AS skills
+//             FROM users u
+//             LEFT JOIN provider_skills ps ON u.id = ps.user_id
+//             LEFT JOIN skills s ON ps.skill_id = s.id
+//             WHERE u.registered_by_broker = $1
+//               AND u.role = 'provider'
+//               AND ps.skill_id = $2
+//             GROUP BY u.id
+//           `, [brokerId, request.skill_id]);
+
+//           return {
+//             ...request,
+//             matching_providers: matchingProviders.rows,
+//             matching_provider_count: matchingProviders.rowCount
+//           };
+//         } catch (err) {
+//           console.error(`Error matching providers for request ${request.id}:`, err);
+//           return { ...request, matching_providers: [], matching_provider_count: 0 };
+//         }
+//       })
+//     );
+
+//     res.json({ success: true, requests: requestsWithProviders });
+//   } catch (error) {
+//     console.error('Error fetching group requests:', error);
+//     res.status(500).json({ success: false, error: 'Failed to fetch group requests: ' + error.message });
+//   }
+// });
 router.get('/group-requests', authMiddleware, permit('broker'), async (req, res) => {
   try {
     const brokerId = req.user.id;
@@ -262,6 +333,8 @@ router.get('/group-requests', authMiddleware, permit('broker'), async (req, res)
         cr.*,
         c.name AS customer_name,
         c.mobile_number AS customer_mobile,
+        c.latitude AS customer_lat,
+        c.longitude AS customer_lng,
         s.name AS skill_name,
         s.id AS skill_id,
         cr.created_at,
@@ -291,6 +364,7 @@ router.get('/group-requests', authMiddleware, permit('broker'), async (req, res)
           const matchingProviders = await db.query(`
             SELECT 
               u.id, u.name, u.mobile_number,
+              u.latitude, u.longitude,
               COALESCE(
                 ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL),
                 ARRAY[]::varchar[]
@@ -301,7 +375,7 @@ router.get('/group-requests', authMiddleware, permit('broker'), async (req, res)
             WHERE u.registered_by_broker = $1
               AND u.role = 'provider'
               AND ps.skill_id = $2
-            GROUP BY u.id
+            GROUP BY u.id, u.latitude, u.longitude
           `, [brokerId, request.skill_id]);
 
           return {

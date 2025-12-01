@@ -19,7 +19,7 @@ export function tryGeolocationFallback() {
       const { latitude, longitude } = position.coords;
       localStorage.setItem('lastLocation', JSON.stringify({ lat: latitude, lng: longitude }));
       centerMap(latitude, longitude, 14);
-      // addMarker(latitude, longitude, "Your Location", "🔧");
+      // addMarker(latitude, longitude, "Your Location", "🛠️");
       showToast("Location detected", "success");
     },
     error => {

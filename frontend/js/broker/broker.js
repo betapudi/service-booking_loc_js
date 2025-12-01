@@ -3,6 +3,7 @@ import { initBrokerDashboard } from "./dashboard.js";
 import { setupLogoutButton } from "../shared/logout.js";
 import { tryGeolocationFallback } from "../shared/geolocation.js";
 import { apiCall } from "../shared/api.js";
+import { initMap } from "../shared/map.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   initBrokerDashboard();
@@ -10,7 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   tryGeolocationFallback();
   setupTabSwitching();
   setupModals();
-//   loadGroupBookingHistory();
+  //   loadGroupBookingHistory();
   loadBrokerStats();
 });
 
@@ -84,6 +85,10 @@ function setupModals() {
 //     </div>
 //   `;
 // }
+
+document.addEventListener("DOMContentLoaded", () => {
+  initMap("mapdiv"); // assumes <div id="mapdiv"></div> exists in HTML
+});
 function loadBrokerStats() {
   apiCall("/bookings/history").then(res => {
     const bookings = res.bookings || [];
