@@ -3,7 +3,94 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { authMiddleware, permit } = require('../helpers/auth');
+// Add to backend/routes/customers.js or bookings.js
+router.get('/me/bookings', authMiddleware, async (req, res) => {
+  try {
+    const customerId = req.user.id;
+    
+    const bookings = await db.query(`
+      SELECT 
+        b.*,
+        u.name as provider_name,
+        u.mobile_number as provider_mobile,
+        u.is_verified as provider_verified,
+        COALESCE(
+          ARRAY_AGG(DISTINCT s.name) FILTER (WHERE s.name IS NOT NULL),
+          ARRAY[]::varchar[]
+        ) as provider_skills,
+        COUNT(br.rating) as total_ratings,
+        AVG(br.rating) as provider_rating
+      FROM bookings b
+      LEFT JOIN users u ON b.provider_id = u.id
+      LEFT JOIN provider_skills ps ON u.id = ps.user_id
+      LEFT JOIN skills s ON ps.skill_id = s.id
+      LEFT JOIN booking_ratings br ON b.id = br.booking_id
+      WHERE b.customer_id = $1 
+        AND b.status IN ('PENDING', 'ACCEPTED', 'IN_PROGRESS')
+      GROUP BY b.id, u.id
+      ORDER BY b.created_at DESC
+    `, [customerId]);
 
+    res.json({
+      success: true,
+      bookings: bookings.rows
+    });
+  } catch (error) {
+    console.error('Error fetching customer bookings:', error);
+    res.status(500).json({ error: 'Failed to fetch bookings' });
+  }
+});
+// Add to backend/routes/bookings.js or customers.js
+router.post('/:id/cancel', authMiddleware, async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+    const userId = req.user.id;
+
+    // Check if booking exists and belongs to customer
+    const bookingCheck = await db.query(
+      `SELECT * FROM bookings WHERE id = $1 AND customer_id = $2 AND status = 'PENDING'`,
+      [bookingId, userId]
+    );
+
+    if (bookingCheck.rowCount === 0) {
+      return res.status(404).json({ 
+        error: 'Booking not found or cannot be cancelled' 
+      });
+    }
+
+    // Update booking status to CANCELLED
+    const result = await db.query(
+      `UPDATE bookings 
+       SET status = 'CANCELLED', updated_at = NOW() 
+       WHERE id = $1 
+       RETURNING *`,
+      [bookingId]
+    );
+
+    const booking = result.rows[0];
+    const io = req.app.locals.io;
+
+    // Notify provider
+    if (booking.provider_id) {
+      io.to(`user_${booking.provider_id}`).emit('booking_cancelled', { booking });
+      
+      await db.query(
+        'INSERT INTO notifications (user_id, message, type, reference_id) VALUES ($1,$2,$3,$4)',
+        [booking.provider_id, `Booking #${bookingId} was cancelled by customer`, 'booking_cancelled', bookingId]
+      );
+    }
+
+    res.json({
+      success: true,
+      booking: booking,
+      message: 'Booking cancelled successfully'
+    });
+
+  } catch (error) {
+    console.error('Error cancelling booking:', error);
+    res.status(500).json({ error: 'Failed to cancel booking' });
+  }
+});
 // Create customer_requests table if it doesn't exist - UPDATED with group_request_id
 router.post('/setup-customer-requests-table', async (req, res) => {
   try {
@@ -77,7 +164,7 @@ router.post('/group-requests', authMiddleware, permit('customer'), async (req, r
     } = req.body;
 
     console.log('Received group request:', req.body);
-    
+
     // Validate required fields
     if (!skill_id || !provider_count || !description) {
       return res.status(400).json({ error: 'Skill, provider count, and description are required' });
@@ -185,7 +272,7 @@ router.post('/group-requests/:id/complete', authMiddleware, permit('customer'), 
 
     // Start transaction to update both customer_requests and bookings
     const client = await db.connect();
-    
+
     try {
       await client.query('BEGIN');
 
@@ -208,7 +295,7 @@ router.post('/group-requests/:id/complete', authMiddleware, permit('customer'), 
       await client.query('COMMIT');
 
       const io = req.app.locals.io;
-      
+
       // Notify all providers in the group
       for (const booking of bookingsUpdate.rows) {
         if (booking.provider_id) {
@@ -258,7 +345,7 @@ router.post('/group-requests/:id/cancel', authMiddleware, permit('customer'), as
 
     // Start transaction
     const client = await db.connect();
-    
+
     try {
       await client.query('BEGIN');
 
@@ -279,8 +366,8 @@ router.post('/group-requests/:id/cancel', authMiddleware, permit('customer'), as
       `, [requestId, customerId]);
 
       await client.query('COMMIT');
-      
-      const io = req.app.locals.io;      
+
+      const io = req.app.locals.io;
 
       for (const booking of bookingsUpdate.rows) {
         if (booking.provider_id) {
@@ -380,7 +467,7 @@ router.get('/providers', authMiddleware, permit('customer'), async (req, res) =>
 router.put('/location', authMiddleware, permit('customer'), async (req, res) => {
   try {
     const userId = req.user.id;
-    const { latitude, longitude } = req.body;
+    const { latitude, longitude, accuracy } = req.body;
 
     if (!latitude || !longitude) {
       return res.status(400).json({ error: 'Latitude and longitude are required' });
@@ -401,11 +488,13 @@ router.put('/location', authMiddleware, permit('customer'), async (req, res) => 
              $3::jsonb
            )
        WHERE id = $4 AND role = 'customer'`,
-      [lat, lng, JSON.stringify({
-        lat: lat,
-        lng: lng,
-        updated_at: new Date().toISOString()
-      }), userId]
+      [lat,
+        lng,
+        JSON.stringify({
+          lat: lat, lng: lng, accuracy: accuracy || null,
+          updated_at: new Date().toISOString()
+        }),
+        parseInt(userId)]
     );
 
     res.json({
@@ -452,12 +541,12 @@ router.post('/bookings/:id/complete', authMiddleware, permit('customer'), async 
   try {
     // Get booking details including group_request_id
     const b = await db.query(
-      `SELECT * FROM bookings WHERE id=$1 AND customer_id=$2`, 
+      `SELECT * FROM bookings WHERE id=$1 AND customer_id=$2`,
       [bookingId, userId]
     );
-    
+
     if (b.rowCount === 0) return res.status(404).json({ error: 'Booking not found' });
-    
+
     const booking = b.rows[0];
     const io = req.app.locals.io;
 
@@ -494,18 +583,18 @@ router.post('/bookings/:id/complete', authMiddleware, permit('customer'), async 
         }
       }
 
-      return res.json({ 
-        success: true, 
+      return res.json({
+        success: true,
         group_completed: true,
         updated_bookings_count: bookingsUpdate.rowCount,
-        booking: booking 
+        booking: booking
       });
     }
 
     // Individual booking completion
     await db.query("UPDATE bookings SET status='COMPLETED' WHERE id=$1", [bookingId]);
     const updatedBooking = (await db.query('SELECT * FROM bookings WHERE id=$1', [bookingId])).rows[0];
-    
+
     // Notify provider
     if (updatedBooking.provider_id) {
       io.to(`user_${updatedBooking.provider_id}`).emit('booking_status', { booking: updatedBooking });
@@ -514,13 +603,13 @@ router.post('/bookings/:id/complete', authMiddleware, permit('customer'), async 
         [updatedBooking.provider_id, `Customer marked booking #${bookingId} as completed.`]
       );
     }
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       group_completed: false,
-      booking: updatedBooking 
+      booking: updatedBooking
     });
-    
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });

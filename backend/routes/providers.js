@@ -80,7 +80,7 @@ const { authMiddleware, permit } = require('../helpers/auth');
 router.get('/search', authMiddleware, permit('customer'), async (req, res) => {
   try {
     const { limit = 50, skill } = req.query;
-    
+
     let query = `
       SELECT 
         u.id,
@@ -105,9 +105,9 @@ router.get('/search', authMiddleware, permit('customer'), async (req, res) => {
         AND u.is_verified = true
         AND u.registered_by_broker IS NULL  -- EXCLUDE BROKER-MANAGED PROVIDERS
     `;
-    
+
     const params = [];
-    
+
     if (skill) {
       params.push(skill);
       query += ` AND EXISTS (
@@ -115,17 +115,17 @@ router.get('/search', authMiddleware, permit('customer'), async (req, res) => {
         WHERE ps2.user_id = u.id AND ps2.skill_id = $${params.length}
       )`;
     }
-    
+
     query += `
       GROUP BY u.id
       ORDER BY COUNT(b.id) DESC, u.created_at DESC
       LIMIT $${params.length + 1}
     `;
-    
+
     params.push(parseInt(limit));
-    
+
     const providers = await db.query(query, params);
-    
+
     console.log(`Found ${providers.rows.length} providers in search`);
 
     res.json({
@@ -144,9 +144,9 @@ router.get('/search', authMiddleware, permit('customer'), async (req, res) => {
 //     if (!lat || !lon) {
 //       return res.status(400).json({ error: "Latitude and longitude are required" });
 //     }
-    
+
 //     console.log("Nearby providers request:", { lat, lon, radius }); // Debug log
-    
+
 //     // Use Haversine formula for distance calculation
 //     const query = `
 //       SELECT 
@@ -221,7 +221,7 @@ router.get('/search', authMiddleware, permit('customer'), async (req, res) => {
 // router.get('/nearby', authMiddleware, permit('customer'), async (req, res) => {
 //   try {
 //     const { lat, lon, radius = 15 } = req.query;
-    
+
 //     if (!lat || !lon) {
 //       return res.status(400).json({ error: 'Latitude and longitude are required' });
 //     }
@@ -358,7 +358,7 @@ router.get('/nearby', authMiddleware, permit('customer'), async (req, res) => {
 //     if (result.rowCount === 0) {
 //       return res.status(404).json({ error: "Provider not found" });
 //     }
-    
+
 //     console.log(`✅ Location updated for provider ${id}`);
 //     res.json({ 
 //       success: true, 
@@ -390,7 +390,13 @@ router.put("/:id/location", async (req, res) => {
            meta = jsonb_set(COALESCE(meta, '{}'::jsonb), '{location}', $3::jsonb)
        WHERE id = $4 AND role = 'provider'
        RETURNING id, name, latitude, longitude, meta`,
-      [lat, lon, JSON.stringify({ lat, lng: lon, accuracy: accuracy || null, updated_at: new Date().toISOString() }), parseInt(id)]
+      [lat,
+        lon,
+        JSON.stringify({
+          lat, lng: lon, accuracy: accuracy || null,
+          updated_at: new Date().toISOString()
+        }),
+        parseInt(id)]
     );
 
     if (result.rowCount === 0) return res.status(404).json({ error: "Provider not found" });
@@ -500,7 +506,7 @@ router.get('/me/earnings', authMiddleware, permit('provider'), async (req, res) 
        FROM payments p 
        JOIN bookings b ON b.id = p.booking_id 
        WHERE b.provider_id=$1 
-       ORDER BY p.created_at DESC`, 
+       ORDER BY p.created_at DESC`,
       [userId]
     );
     res.json({ payments: r.rows });

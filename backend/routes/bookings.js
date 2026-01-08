@@ -39,9 +39,9 @@ router.post('/', authMiddleware, async (req, res) => {
     if (provider_id) {
       io.to(`user_${provider_id}`).emit('new_booking', { booking: bookingWithCustomer });
       await db.query(
-        'INSERT INTO notifications (user_id, message) VALUES ($1,$2)',
-        [provider_id, `New booking #${booking.id} from ${bookingWithCustomer.customer_name}`]
-      );
+        'INSERT INTO notifications (user_id, message, type, reference_id) VALUES ($1,$2,$3,$4)',
+        [provider_id, `New booking request #${booking.id} from ${bookingWithCustomer.customer_name}`,
+          'booking_request', booking.id]);
     }
 
     // Notify broker if involved
@@ -53,7 +53,11 @@ router.post('/', authMiddleware, async (req, res) => {
       );
     }
 
-    res.json({ booking: bookingWithCustomer });
+    res.json({
+      success: true,
+      booking: bookingWithCustomer,
+      message: 'Booking request sent successfully. Waiting for provider approval.'
+    });
   } catch (err) {
     console.error('Error creating booking:', err);
     res.status(500).json({ error: 'Server error' });
@@ -204,7 +208,7 @@ router.post('/:id/status', authMiddleware, async (req, res) => {
 router.get('/provider-bookings', async (req, res) => {
   try {
     const providerId = req.user.id;
-    
+
     const providerBookings = await db.query(`
       SELECT b.*, 
              cr.customer_name,
@@ -225,7 +229,7 @@ router.get('/provider-bookings', async (req, res) => {
     `, [providerId]);
 
     res.json({ bookings: providerBookings });
-    
+
   } catch (error) {
     console.error('Provider bookings error:', error);
     res.status(500).json({ error: 'Failed to fetch provider bookings' });
